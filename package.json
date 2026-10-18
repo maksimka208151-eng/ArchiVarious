@@ -1,0 +1,29 @@
+{
+  "name": "archivarious",
+  "private": true,
+  "description": "ArchiVarious: quick capture into your Obsidian second brain, with delayed survey-based filing.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:plugin": "pnpm --filter @archivarious/obsidian-plugin dev",
+    "dev:widget": "pnpm --filter @archivarious/widget tauri dev",
+    "build": "pnpm -r build",
+    "build:plugin": "pnpm --filter @archivarious/obsidian-plugin build",
+    "build:widget": "pnpm --filter @archivarious/widget tauri build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

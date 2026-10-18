@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+
+# Obsidian plugin build output (released as GitHub release assets, not committed)
+apps/obsidian-plugin/main.js
+
+# Tauri / Rust
+apps/widget/src-tauri/target/
+apps/widget/src-tauri/gen/schemas/
+
+# Local test vault
+.dev-vault/
