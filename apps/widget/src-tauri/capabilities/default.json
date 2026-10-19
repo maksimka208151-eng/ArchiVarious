@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the capture window. Kept minimal: no general file system access from JS; vault writes go through the `write_capture` command.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "os:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "obsidian://*" }]
+    }
+  ]
+}

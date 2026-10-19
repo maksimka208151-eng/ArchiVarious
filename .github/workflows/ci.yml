@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Root plugin manifest is in sync
+        run: |
+          diff manifest.json apps/obsidian-plugin/manifest.json
+          diff versions.json apps/obsidian-plugin/versions.json
+      - run: pnpm build:plugin
+      - run: pnpm --filter @archivarious/widget build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: obsidian-plugin
+          path: |
+            apps/obsidian-plugin/main.js
+            apps/obsidian-plugin/manifest.json
+            apps/obsidian-plugin/styles.css
+
+  rust:
+    name: Widget app (Rust)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/widget/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/widget/src-tauri
+      # tauri::generate_context! needs the frontend dist folder to exist at compile time.
+      - run: mkdir -p ../dist && touch ../dist/index.html
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test

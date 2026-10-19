@@ -1,0 +1,26 @@
+{
+  "name": "@archivarious/obsidian-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ArchiVarious Obsidian plugin (desktop + mobile).",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "version": "node ../../scripts/version-bump.mjs"
+  },
+  "dependencies": {
+    "@archivarious/core": "workspace:*",
+    "@archivarious/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@tsconfig/svelte": "5.0.8",
+    "builtin-modules": "5.4.0",
+    "esbuild": "0.28.2",
+    "esbuild-svelte": "0.9.5",
+    "obsidian": "1.14.4",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.7"
+  }
+}

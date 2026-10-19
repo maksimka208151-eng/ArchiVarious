@@ -1,0 +1,9 @@
+{
+  "id": "archivarious",
+  "name": "ArchiVarious",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Quickly capture what you need to remember. ArchiVarious lightly formats it, then asks a short survey later and files it into your vault.",
+  "author": "ArchiVarious",
+  "isDesktopOnly": false
+}

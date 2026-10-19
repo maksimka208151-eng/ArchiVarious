@@ -1,0 +1,13 @@
+{
+  "name": "@archivarious/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Platform-agnostic domain logic: capture model, light formatting, survey scheduling, placement algorithm, inbox protocol.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
