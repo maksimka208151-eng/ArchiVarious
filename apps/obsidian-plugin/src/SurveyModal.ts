@@ -13,6 +13,8 @@ export class SurveyModal extends Modal {
     private readonly questions: SurveyQuestion[],
     private readonly onAnswer: (answers: SurveyAnswers) => Promise<void>,
     private readonly onSkip: () => Promise<void>,
+    /** Preselected answers by question id (e.g. the note's current folder and kind on a review). */
+    private readonly defaults: Record<string, string> = {},
   ) {
     super(app);
   }
@@ -26,7 +28,8 @@ export class SurveyModal extends Modal {
       const wrapper = contentEl.createDiv({ cls: "archivarious-survey__question" });
       wrapper.createEl("p", { text: question.prompt });
       const options = wrapper.createDiv({ cls: "archivarious-survey__options" });
-      const first = question.options[0];
+      const preset = this.defaults[question.id];
+      const first = question.options.find((o) => o.value === preset) ?? question.options[0];
       if (first) this.answers[question.id] = first.value;
 
       for (const option of question.options) {

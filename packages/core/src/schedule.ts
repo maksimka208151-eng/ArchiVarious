@@ -41,3 +41,18 @@ function inQuietHours(hour: number, { from, to }: { from: number; to: number }):
 function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60_000);
 }
+
+/** Days after filing before a note comes back for a review survey ("does it still belong here?"). */
+export const DEFAULT_REVIEW_DAYS = 7;
+
+export function scheduleReview(from: Date, days: number): Date {
+  return addMinutes(from, days * 24 * 60);
+}
+
+/**
+ * Spaced reviews: every filed note is reviewed once; notes marked important (3) keep coming back
+ * at doubling intervals, the way spaced repetition resurfaces what matters. `null` = no more reviews.
+ */
+export function nextReviewDays(previousDays: number, importance: 1 | 2 | 3): number | null {
+  return importance === 3 ? Math.max(1, previousDays) * 2 : null;
+}

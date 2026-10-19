@@ -4,22 +4,25 @@
   interface Props {
     /** Called with the raw text. The host decides how to persist it (vault API, file write, URI). */
     onsubmit: (raw: string) => void | Promise<void>;
+    /** When given, a second action saves and sorts the note immediately instead of waiting for the survey. */
+    onsubmitNow?: (raw: string) => void | Promise<void>;
     oncancel?: () => void;
     placeholder?: string;
     autofocus?: boolean;
   }
 
-  let { onsubmit, oncancel, placeholder = "Что запомнить?", autofocus = true }: Props = $props();
+  let { onsubmit, onsubmitNow, oncancel, placeholder = "Что запомнить?", autofocus = true }: Props = $props();
 
   let text = $state("");
   let busy = $state(false);
   const preview = $derived(text.trim() ? lightFormat(text) : null);
 
-  async function submit() {
+  async function submit(now = false) {
+    const handler = now && onsubmitNow ? onsubmitNow : onsubmit;
     if (!text.trim() || busy) return;
     busy = true;
     try {
-      await onsubmit(text);
+      await handler(text);
       text = "";
     } finally {
       busy = false;
@@ -29,7 +32,7 @@
   function onkeydown(event: KeyboardEvent) {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      void submit();
+      void submit(event.shiftKey);
     } else if (event.key === "Escape") {
       oncancel?.();
     }
@@ -48,8 +51,15 @@
     </div>
   {/if}
   <div class="archivarious-capture__actions">
-    <span class="archivarious-capture__hint">Ctrl/⌘ + Enter</span>
-    <button type="button" onclick={submit} disabled={busy || !text.trim()}>Сохранить</button>
+    <span class="archivarious-capture__hint">
+      Ctrl/⌘ + Enter{#if onsubmitNow}&nbsp;· разложить сейчас: + Shift{/if}
+    </span>
+    <div class="archivarious-capture__buttons">
+      {#if onsubmitNow}
+        <button type="button" onclick={() => submit(true)} disabled={busy || !text.trim()}>Разложить сейчас</button>
+      {/if}
+      <button type="button" class="mod-cta" onclick={() => submit()} disabled={busy || !text.trim()}>Сохранить</button>
+    </div>
   </div>
 </div>
 
@@ -79,6 +89,10 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+  .archivarious-capture__buttons {
+    display: flex;
+    gap: 0.4rem;
   }
   .archivarious-capture__hint {
     font-size: 0.8em;

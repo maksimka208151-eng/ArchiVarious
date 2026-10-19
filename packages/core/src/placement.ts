@@ -97,3 +97,51 @@ export function tokenize(text: string): string[] {
     ),
   ];
 }
+
+/** A note the capture could link to. Built by the host from its metadata cache. */
+export interface NoteProfile {
+  path: string;
+  title: string;
+  tags: string[];
+  terms: string[];
+}
+
+export interface RelatedNote {
+  path: string;
+  title: string;
+  score: number;
+}
+
+/** Minimum overlap to count as related: one shared tag, or two shared terms. */
+const MIN_RELATED_SCORE = 2;
+
+/**
+ * Finds existing notes that share tags or terms with the capture, so a filed note is linked
+ * into the graph instead of floating alone. Same weighting idea as `suggestPlacements`.
+ */
+export function suggestRelatedNotes(input: PlacementInput, notes: NoteProfile[], limit = 3): RelatedNote[] {
+  const terms = new Set(tokenize(`${input.title} ${input.body}`));
+  const tags = new Set(input.tags);
+  return notes
+    .map((note) => {
+      const sharedTags = note.tags.filter((t) => tags.has(t)).length;
+      const sharedTerms = note.terms.filter((t) => terms.has(t)).length;
+      return { path: note.path, title: note.title, score: TAG_WEIGHT * sharedTags + TERM_WEIGHT * sharedTerms };
+    })
+    .filter((n) => n.score >= MIN_RELATED_SCORE)
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, limit);
+}
+
+/** Adds two sets of learned preferences (e.g. the plugin's and the widget app's) without mutating either. */
+export function mergeFeedback(a: PlacementFeedback, b: PlacementFeedback): PlacementFeedback {
+  const merged: PlacementFeedback = {};
+  for (const source of [a, b]) {
+    for (const [folder, terms] of Object.entries(source)) {
+      const target = merged[folder] ?? {};
+      merged[folder] = target;
+      for (const [term, weight] of Object.entries(terms)) target[term] = (target[term] ?? 0) + weight;
+    }
+  }
+  return merged;
+}

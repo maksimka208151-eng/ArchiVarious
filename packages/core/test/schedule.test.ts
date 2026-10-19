@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSurveyDue, scheduleSurvey, snoozeSurvey } from "../src/schedule";
+import { isSurveyDue, nextReviewDays, scheduleReview, scheduleSurvey, snoozeSurvey } from "../src/schedule";
 
 const policy = { delayMinutes: 120, snoozeMinutes: 30, quietHours: { from: 23, to: 8 } };
 
@@ -19,5 +19,18 @@ describe("survey scheduling", () => {
     expect(snoozeSurvey(now, policy)).toEqual(new Date(2026, 0, 1, 15, 30));
     expect(isSurveyDue(new Date(2026, 0, 1, 14, 59), now)).toBe(true);
     expect(isSurveyDue(new Date(2026, 0, 1, 15, 1), now)).toBe(false);
+  });
+});
+
+describe("reviews", () => {
+  it("schedules a review the given number of days later", () => {
+    expect(scheduleReview(new Date(2026, 0, 1, 10, 0), 7)).toEqual(new Date(2026, 0, 8, 10, 0));
+  });
+
+  it("keeps resurfacing only important notes, at doubling intervals", () => {
+    expect(nextReviewDays(7, 3)).toBe(14);
+    expect(nextReviewDays(0, 3)).toBe(2);
+    expect(nextReviewDays(7, 2)).toBeNull();
+    expect(nextReviewDays(7, 1)).toBeNull();
   });
 });

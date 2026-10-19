@@ -1,4 +1,4 @@
-import { type FolderProfile, tokenize, type VaultIndex } from "@archivarious/core";
+import { type FolderProfile, type NoteProfile, tokenize, type VaultIndex } from "@archivarious/core";
 import { type App, getAllTags } from "obsidian";
 
 /**
@@ -31,4 +31,17 @@ export function buildVaultIndex(app: App, inboxFolder: string): VaultIndex {
   }
 
   return { folders: [...folders.values()] };
+}
+
+/** Per-note profiles for linking a filed capture to related notes. Also read from the metadata cache only. */
+export function buildNoteProfiles(app: App, inboxFolder: string): NoteProfile[] {
+  return app.vault
+    .getMarkdownFiles()
+    .filter((file) => !file.path.startsWith(`${inboxFolder}/`))
+    .map((file) => {
+      const cache = app.metadataCache.getFileCache(file);
+      const tags = cache ? (getAllTags(cache) ?? []).map((t) => t.replace(/^#/, "").toLowerCase()) : [];
+      const headings = cache?.headings?.map((h) => h.heading).join(" ") ?? "";
+      return { path: file.path, title: file.basename, tags, terms: tokenize(`${file.basename} ${headings}`) };
+    });
 }
