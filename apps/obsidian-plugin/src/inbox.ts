@@ -9,7 +9,8 @@ import {
   serializeCapture,
   snoozeSurvey,
 } from "@archivarious/core";
-import { type App, normalizePath, TFile } from "obsidian";
+import { type App, normalizePath, type TFile } from "obsidian";
+import { ensureFolder, placeNote } from "./filing";
 import type { ArchiVariousSettings } from "./settings";
 
 export interface InboxEntry {
@@ -61,59 +62,23 @@ export class Inbox {
     await this.app.vault.process(entry.file, () => serializeCapture({ ...entry.capture, surveyAt }));
   }
 
-  /**
-   * Moves the capture to its final folder as a regular note, keeping provenance in frontmatter,
-   * and links it to `related` notes and the folder's hub note so it joins the graph.
-   */
+  /** Turns the capture into a regular note in its final folder, keeping provenance in frontmatter. */
   async file(entry: InboxEntry, answers: SurveyAnswers, related: string[] = []): Promise<TFile> {
     const { capture } = entry;
-    await this.ensureFolder(answers.folder);
-    const target = await this.uniquePath(answers.folder, capture.title);
     await this.app.vault.process(entry.file, () => `${capture.body}\n`);
-    await this.app.fileManager.renameFile(entry.file, target);
-    const filed = this.app.vault.getAbstractFileByPath(target);
-    if (!(filed instanceof TFile)) throw new Error(`ArchiVarious: filed note not found at ${target}`);
-    await this.app.fileManager.processFrontMatter(filed, (fm) => {
-      fm.archivarious_id = capture.id;
-      fm.created = capture.createdAt;
-      fm.kind = answers.kind;
-      fm.importance = answers.importance;
-      if (capture.tags.length > 0) fm.tags = capture.tags;
-      if (capture.links.length > 0) fm.links = capture.links;
+    return placeNote(this.app, this.settings(), entry.file, answers, {
+      basename: capture.title,
+      related,
+      frontmatter: {
+        archivarious_id: capture.id,
+        created: capture.createdAt,
+        ...(capture.tags.length > 0 ? { tags: capture.tags } : {}),
+        ...(capture.links.length > 0 ? { links: capture.links } : {}),
+      },
     });
-
-    const targets = related.filter((p) => p !== filed.path);
-    if (this.settings().linkFolderHub) targets.unshift((await this.ensureHub(answers.folder)).path);
-    const links = [...new Set(targets)]
-      .map((path) => this.app.vault.getAbstractFileByPath(path))
-      .filter((f): f is TFile => f instanceof TFile && f.path !== filed.path)
-      .map((f) => this.app.fileManager.generateMarkdownLink(f, filed.path));
-    if (links.length > 0) {
-      await this.app.vault.process(filed, (text) => `${text.trimEnd()}\n\nСвязано: ${links.join(" · ")}\n`);
-    }
-    return filed;
-  }
-
-  /** Folder hub ("map of content"): `<folder>/<folder name>.md`, created on first use. */
-  private async ensureHub(folder: string): Promise<TFile> {
-    const path = normalizePath(folder);
-    const name = path.split("/").pop() || "Notes";
-    const hubPath = normalizePath(`${path}/${name}.md`);
-    const existing = this.app.vault.getAbstractFileByPath(hubPath);
-    if (existing instanceof TFile) return existing;
-    return this.app.vault.create(hubPath, `# ${name}\n`);
   }
 
   private async ensureFolder(folder: string): Promise<void> {
-    const path = normalizePath(folder);
-    if (!this.app.vault.getAbstractFileByPath(path)) await this.app.vault.createFolder(path);
-  }
-
-  private async uniquePath(folder: string, title: string): Promise<string> {
-    const base = title.replace(/[\\/:*?"<>|#^[\]]/g, "").trim() || "Untitled";
-    for (let i = 0; ; i++) {
-      const candidate = normalizePath(`${folder}/${i === 0 ? base : `${base} ${i}`}.md`);
-      if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
-    }
+    await ensureFolder(this.app, folder);
   }
 }

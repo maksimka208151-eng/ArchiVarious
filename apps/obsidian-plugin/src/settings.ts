@@ -1,4 +1,9 @@
-import { DEFAULT_INBOX_FOLDER, DEFAULT_SURVEY_POLICY, type PlacementFeedback } from "@archivarious/core";
+import {
+  DEFAULT_INBOX_FOLDER,
+  DEFAULT_REVIEW_DAYS,
+  DEFAULT_SURVEY_POLICY,
+  type PlacementFeedback,
+} from "@archivarious/core";
 import { type App, PluginSettingTab, Setting } from "obsidian";
 import type ArchiVariousPlugin from "./main";
 
@@ -10,6 +15,8 @@ export interface ArchiVariousSettings {
   snoozeMinutes: number;
   /** Link each filed note to its folder's hub note, so every topic forms a cluster in the graph. */
   linkFolderHub: boolean;
+  /** Days after filing before a note comes back for a review survey. 0 turns reviews off. */
+  reviewDays: number;
   /** Learned per-folder term weights. Lives in data.json so it syncs with the vault. */
   feedback: PlacementFeedback;
 }
@@ -20,6 +27,7 @@ export const DEFAULT_SETTINGS: ArchiVariousSettings = {
   surveyDelayMinutes: DEFAULT_SURVEY_POLICY.delayMinutes,
   snoozeMinutes: DEFAULT_SURVEY_POLICY.snoozeMinutes,
   linkFolderHub: true,
+  reviewDays: DEFAULT_REVIEW_DAYS,
   feedback: {},
 };
 
@@ -62,6 +70,21 @@ export class ArchiVariousSettingTab extends PluginSettingTab {
         toggle.setValue(this.plugin.settings.linkFolderHub).onChange(async (value) => {
           this.plugin.settings.linkFolderHub = value;
           await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Review after (days)")
+      .setDesc(
+        "Filed notes come back for a short review after this many days; important ones keep coming back. 0 turns reviews off.",
+      )
+      .addText((text) =>
+        text.setValue(String(this.plugin.settings.reviewDays)).onChange(async (value) => {
+          const days = Number.parseInt(value, 10);
+          if (Number.isFinite(days) && days >= 0) {
+            this.plugin.settings.reviewDays = days;
+            await this.plugin.saveSettings();
+          }
         }),
       );
 
