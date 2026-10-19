@@ -1,6 +1,6 @@
 [package]
 name = "archivarious-widget"
-version = "0.2.0"
+version = "0.2.1"
 description = "ArchiVarious quick-capture widget app"
 authors = ["ArchiVarious"]
 license = "MIT"

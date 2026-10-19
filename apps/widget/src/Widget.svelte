@@ -2,7 +2,7 @@
   
   import type { Capture, SurveyAnswers, SurveyQuestion } from "@archivarious/core";
 import { Survey } from "@archivarious/ui";
-  import { listen } from "@tauri-apps/api/event";
+  import { emit, listen } from "@tauri-apps/api/event";
   import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -150,8 +150,14 @@ import { Survey } from "@archivarious/ui";
       if (event.ctrlKey || event.metaKey) void sortNow();
       else void save();
     } else if (event.key === "Escape") {
-      void place(false);
+      dismiss();
     }
+  }
+
+  /** Esc (here) or the hotkey (in Rust) are the only ways to put the summoned widget back. */
+  function dismiss() {
+    void place(false);
+    void emit("dismissed");
   }
 
   async function chooseFolder() {
@@ -210,11 +216,9 @@ import { Survey } from "@archivarious/ui";
         input?.focus();
       }
     }).then((unlisten) => cleanups.push(unlisten));
-    void win
-      .onFocusChanged(({ payload: focused }) => {
-        if (!focused) void place(false);
-      })
-      .then((unlisten) => cleanups.push(unlisten));
+    // Losing focus does not put the widget back: on Windows, dragging the bar briefly moves focus from the
+    // webview to the window, which used to send the widget under other windows mid-drag.
+    void listen("dismiss", () => void place(false)).then((unlisten) => cleanups.push(unlisten));
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
@@ -282,7 +286,7 @@ import { Survey } from "@archivarious/ui";
         <input type="checkbox" checked={autostart} onchange={(event) => toggleAutostart(event.currentTarget.checked)} />
         Запускать вместе с Windows
       </label>
-      <p class="hint">Вызвать виджет: Ctrl+Shift+Space или иконка в трее. Esc убирает его обратно.</p>
+      <p class="hint">Вызвать виджет: Ctrl+Shift+Space или иконка в трее. Он остаётся поверх окон, пока не нажмёшь Esc или снова Ctrl+Shift+Space.</p>
       <div class="actions">
         {#if settings.vaultPath}
           <button type="button" onclick={() => (view = "bar")}>Отмена</button>

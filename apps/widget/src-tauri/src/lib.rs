@@ -49,6 +49,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                desktop::set_front(false);
             }
         });
 
