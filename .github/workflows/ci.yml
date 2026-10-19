@@ -30,7 +30,7 @@ jobs:
           diff versions.json apps/obsidian-plugin/versions.json
       - run: pnpm build:plugin
       - run: pnpm --filter @archivarious/widget build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: obsidian-plugin
           path: |
