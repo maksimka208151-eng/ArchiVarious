@@ -1,15 +1,30 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the capture window. Kept minimal: no general file system access from JS; vault writes go through the `write_capture` command.",
+  "description": "Permissions for the widget window. No general file system access from JS: vault reads and writes go through the commands in inbox.rs, which guard their paths.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-size",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-always-on-bottom",
+    "core:window:allow-start-dragging",
+    "core:window:allow-unminimize",
     "os:default",
+    "dialog:allow-open",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "obsidian://*" }]
+      "allow": [
+        {
+          "url": "obsidian://*"
+        }
+      ]
     }
   ]
 }

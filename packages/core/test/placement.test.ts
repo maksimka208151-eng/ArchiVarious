@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { learnFromAnswer, suggestPlacements, suggestRelatedNotes, type VaultIndex } from "../src/placement";
+import {
+  learnFromAnswer,
+  mergeFeedback,
+  suggestPlacements,
+  suggestRelatedNotes,
+  type VaultIndex,
+} from "../src/placement";
 
 const index: VaultIndex = {
   folders: [
@@ -49,5 +55,14 @@ describe("suggestRelatedNotes", () => {
 
   it("returns nothing for unrelated text", () => {
     expect(suggestRelatedNotes({ title: "Taxes", body: "Pay taxes", tags: [] }, notes)).toEqual([]);
+  });
+});
+
+describe("mergeFeedback", () => {
+  it("sums weights per folder and term without mutating the inputs", () => {
+    const a = { Learning: { memory: 1 }, Work: { plan: 2 } };
+    const b = { Learning: { memory: 2, loci: 1 } };
+    expect(mergeFeedback(a, b)).toEqual({ Learning: { memory: 3, loci: 1 }, Work: { plan: 2 } });
+    expect(a).toEqual({ Learning: { memory: 1 }, Work: { plan: 2 } });
   });
 });

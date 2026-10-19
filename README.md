@@ -5,7 +5,7 @@
 Проект состоит из двух продуктов:
 
 - **Плагин Obsidian** (`apps/obsidian-plugin`) для десктопа и мобильных.
-- **Виджет-приложение** (`apps/widget`) на Tauri 2 для Windows, macOS, Linux, Android и iOS: окно быстрого ввода по горячей клавише `Ctrl/⌘+Shift+Space` или из трея.
+- **Виджет-приложение** (`apps/widget`) на Tauri 2 для Windows, macOS, Linux, Android и iOS: на рабочем столе Windows 11 это постоянная строка ввода, в которой запись можно сразу разложить (`Ctrl+Enter`). Вызов: `Ctrl/⌘+Shift+Space` или значок в трее.
 
 Архитектура и обоснование каждого решения описаны в [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

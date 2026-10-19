@@ -132,3 +132,16 @@ export function suggestRelatedNotes(input: PlacementInput, notes: NoteProfile[],
     .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
     .slice(0, limit);
 }
+
+/** Adds two sets of learned preferences (e.g. the plugin's and the widget app's) without mutating either. */
+export function mergeFeedback(a: PlacementFeedback, b: PlacementFeedback): PlacementFeedback {
+  const merged: PlacementFeedback = {};
+  for (const source of [a, b]) {
+    for (const [folder, terms] of Object.entries(source)) {
+      const target = merged[folder] ?? {};
+      merged[folder] = target;
+      for (const [term, weight] of Object.entries(terms)) target[term] = (target[term] ?? 0) + weight;
+    }
+  }
+  return merged;
+}
