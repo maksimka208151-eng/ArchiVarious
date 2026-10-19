@@ -8,7 +8,8 @@ export class CaptureModal extends Modal {
 
   constructor(
     app: App,
-    private readonly onCapture: (raw: string) => Promise<void>,
+    /** `now` = the user chose "sort now": the survey opens right after saving. */
+    private readonly onCapture: (raw: string, now: boolean) => Promise<void>,
   ) {
     super(app);
   }
@@ -19,7 +20,11 @@ export class CaptureModal extends Modal {
       target: this.contentEl,
       props: {
         onsubmit: async (raw: string) => {
-          await this.onCapture(raw);
+          await this.onCapture(raw, false);
+          this.close();
+        },
+        onsubmitNow: async (raw: string) => {
+          await this.onCapture(raw, true);
           this.close();
         },
         oncancel: () => this.close(),

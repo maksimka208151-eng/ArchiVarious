@@ -46,6 +46,11 @@ export class Inbox {
     return entries.filter((e): e is InboxEntry => e !== null);
   }
 
+  async entry(file: TFile): Promise<InboxEntry | null> {
+    const capture = parseCapture(await this.app.vault.read(file));
+    return capture ? { file, capture } : null;
+  }
+
   async due(now = new Date()): Promise<InboxEntry[]> {
     return (await this.list()).filter((e) => e.capture.status !== "filed" && isSurveyDue(e.capture.surveyAt, now));
   }
@@ -56,8 +61,11 @@ export class Inbox {
     await this.app.vault.process(entry.file, () => serializeCapture({ ...entry.capture, surveyAt }));
   }
 
-  /** Moves the capture to its final folder as a regular note, keeping provenance in frontmatter. */
-  async file(entry: InboxEntry, answers: SurveyAnswers): Promise<TFile> {
+  /**
+   * Moves the capture to its final folder as a regular note, keeping provenance in frontmatter,
+   * and links it to `related` notes and the folder's hub note so it joins the graph.
+   */
+  async file(entry: InboxEntry, answers: SurveyAnswers, related: string[] = []): Promise<TFile> {
     const { capture } = entry;
     await this.ensureFolder(answers.folder);
     const target = await this.uniquePath(answers.folder, capture.title);
@@ -73,7 +81,27 @@ export class Inbox {
       if (capture.tags.length > 0) fm.tags = capture.tags;
       if (capture.links.length > 0) fm.links = capture.links;
     });
+
+    const targets = related.filter((p) => p !== filed.path);
+    if (this.settings().linkFolderHub) targets.unshift((await this.ensureHub(answers.folder)).path);
+    const links = [...new Set(targets)]
+      .map((path) => this.app.vault.getAbstractFileByPath(path))
+      .filter((f): f is TFile => f instanceof TFile && f.path !== filed.path)
+      .map((f) => this.app.fileManager.generateMarkdownLink(f, filed.path));
+    if (links.length > 0) {
+      await this.app.vault.process(filed, (text) => `${text.trimEnd()}\n\nСвязано: ${links.join(" · ")}\n`);
+    }
     return filed;
+  }
+
+  /** Folder hub ("map of content"): `<folder>/<folder name>.md`, created on first use. */
+  private async ensureHub(folder: string): Promise<TFile> {
+    const path = normalizePath(folder);
+    const name = path.split("/").pop() || "Notes";
+    const hubPath = normalizePath(`${path}/${name}.md`);
+    const existing = this.app.vault.getAbstractFileByPath(hubPath);
+    if (existing instanceof TFile) return existing;
+    return this.app.vault.create(hubPath, `# ${name}\n`);
   }
 
   private async ensureFolder(folder: string): Promise<void> {

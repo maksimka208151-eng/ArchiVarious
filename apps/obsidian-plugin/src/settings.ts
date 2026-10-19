@@ -8,6 +8,8 @@ export interface ArchiVariousSettings {
   fallbackFolder: string;
   surveyDelayMinutes: number;
   snoozeMinutes: number;
+  /** Link each filed note to its folder's hub note, so every topic forms a cluster in the graph. */
+  linkFolderHub: boolean;
   /** Learned per-folder term weights. Lives in data.json so it syncs with the vault. */
   feedback: PlacementFeedback;
 }
@@ -17,6 +19,7 @@ export const DEFAULT_SETTINGS: ArchiVariousSettings = {
   fallbackFolder: "ArchiVarious/Notes",
   surveyDelayMinutes: DEFAULT_SURVEY_POLICY.delayMinutes,
   snoozeMinutes: DEFAULT_SURVEY_POLICY.snoozeMinutes,
+  linkFolderHub: true,
   feedback: {},
 };
 
@@ -48,6 +51,16 @@ export class ArchiVariousSettingTab extends PluginSettingTab {
       .addText((text) =>
         text.setValue(this.plugin.settings.fallbackFolder).onChange(async (value) => {
           this.plugin.settings.fallbackFolder = value.trim() || DEFAULT_SETTINGS.fallbackFolder;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Link to folder hub")
+      .setDesc("Link each filed note to a hub note named after its folder (created if missing).")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.linkFolderHub).onChange(async (value) => {
+          this.plugin.settings.linkFolderHub = value;
           await this.plugin.saveSettings();
         }),
       );
