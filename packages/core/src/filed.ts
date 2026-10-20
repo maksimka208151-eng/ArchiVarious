@@ -14,6 +14,8 @@ export interface FiledNoteOptions {
   links: NoteRef[];
   /** Days until the first review survey; 0/undefined = no review. */
   reviewDays?: number;
+  /** Whether the user kept the survey's first suggestion (for the accuracy statistic). */
+  hit?: boolean;
   now?: Date;
 }
 
@@ -42,7 +44,7 @@ export function noteFileName(title: string): string {
  */
 export function serializeFiledNote(
   capture: Capture,
-  { answers, links, reviewDays, now = new Date() }: FiledNoteOptions,
+  { answers, links, reviewDays, hit, now = new Date() }: FiledNoteOptions,
 ): string {
   const fm = [
     "---",
@@ -50,7 +52,9 @@ export function serializeFiledNote(
     `created: ${JSON.stringify(capture.createdAt)}`,
     `kind: ${answers.kind}`,
     `importance: ${answers.importance}`,
+    `filed: ${JSON.stringify(now.toISOString())}`,
   ];
+  if (hit !== undefined) fm.push(`suggestion_hit: ${hit}`);
   if (capture.tags.length > 0) fm.push(`tags: [${capture.tags.map((t) => JSON.stringify(t)).join(", ")}]`);
   if (capture.links.length > 0) fm.push(`links: [${capture.links.map((l) => JSON.stringify(l)).join(", ")}]`);
   if (reviewDays && reviewDays > 0) {

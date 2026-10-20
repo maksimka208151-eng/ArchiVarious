@@ -9,6 +9,7 @@ import {
   type SurveyAnswers,
   serializeCapture,
   snoozeSurvey,
+  surveyPolicy,
 } from "@archivarious/core";
 import { type App, normalizePath, TFile } from "obsidian";
 import { ensureFolder, placeNote } from "./filing";
@@ -27,8 +28,8 @@ export class Inbox {
   ) {}
 
   async add(raw: string, source: CaptureSource): Promise<TFile> {
-    const { inboxFolder, surveyDelayMinutes, snoozeMinutes } = this.settings();
-    const capture = newCapture(raw, source, new Date(), { delayMinutes: surveyDelayMinutes, snoozeMinutes });
+    const { inboxFolder } = this.settings();
+    const capture = newCapture(raw, source, new Date(), surveyPolicy(this.settings()));
     await this.ensureFolder(inboxFolder);
     return this.app.vault.create(
       normalizePath(`${inboxFolder}/${captureFileName(capture)}`),
@@ -58,8 +59,7 @@ export class Inbox {
   }
 
   async snooze(entry: InboxEntry): Promise<void> {
-    const { snoozeMinutes, surveyDelayMinutes } = this.settings();
-    const surveyAt = snoozeSurvey(new Date(), { delayMinutes: surveyDelayMinutes, snoozeMinutes }).toISOString();
+    const surveyAt = snoozeSurvey(new Date(), surveyPolicy(this.settings())).toISOString();
     await this.app.vault.process(entry.file, () => serializeCapture({ ...entry.capture, surveyAt }));
   }
 

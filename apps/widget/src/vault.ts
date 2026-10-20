@@ -32,6 +32,7 @@ import {
   snapshotFromSnippets,
   suggestPlacements,
   suggestRelatedNotes,
+  surveyPolicy,
   type VaultSnapshot,
 } from "@archivarious/core";
 import { invoke } from "@tauri-apps/api/core";
@@ -92,10 +93,7 @@ export async function sendCapture(
 ): Promise<{ via: "file" | "uri"; capture?: Capture }> {
   if (settings.vaultPath) {
     const shared = await readSharedSettings(settings.vaultPath);
-    const capture = newCapture(raw, source, new Date(), {
-      delayMinutes: shared.surveyDelayMinutes,
-      snoozeMinutes: shared.snoozeMinutes,
-    });
+    const capture = newCapture(raw, source, new Date(), surveyPolicy(shared));
     await invoke("write_capture", {
       vaultPath: settings.vaultPath,
       inboxFolder: shared.inboxFolder,
@@ -114,6 +112,8 @@ export interface VaultContext {
   snapshot: VaultSnapshot;
   /** The user's own sections, offered in every survey (shared with the plugin through a note in the vault). */
   sections: string[];
+  /** The beginning of every note, for the review queue and the statistics. */
+  snippets: NoteSnippet[];
 }
 
 export async function loadVaultContext(vaultPath: string): Promise<VaultContext> {
@@ -122,7 +122,12 @@ export async function loadVaultContext(vaultPath: string): Promise<VaultContext>
     invoke<NoteSnippet[]>("scan_vault", { vaultPath, inboxFolder: shared.inboxFolder }),
     invoke<string | null>("read_sections", { vaultPath }),
   ]);
-  return { shared, snapshot: snapshotFromSnippets(snippets, shared.inboxFolder), sections: parseSections(sections) };
+  return {
+    shared,
+    snapshot: snapshotFromSnippets(snippets, shared.inboxFolder),
+    sections: parseSections(sections),
+    snippets,
+  };
 }
 
 /** Adds sections created in the survey to the shared list (re-read first, the plugin may have changed it) and creates their folders. */
@@ -136,17 +141,43 @@ async function addSections(vaultPath: string, paths: string[]): Promise<void> {
 }
 
 export function prepareSurvey(raw: string, context: VaultContext, settings: WidgetSettings) {
-  const capture = newCapture(raw, "widget-desktop", new Date(), {
-    delayMinutes: context.shared.surveyDelayMinutes,
-    snoozeMinutes: context.shared.snoozeMinutes,
-  });
+  return surveyForCapture(
+    newCapture(raw, "widget-desktop", new Date(), surveyPolicy(context.shared)),
+    context,
+    settings,
+  );
+}
+
+/**
+ * The survey for a capture (typed just now, or waiting in the inbox), or with `currentFolder` for a note under
+ * review, where "it's fine where it is" comes first and appending to another note is not offered.
+ */
+export function surveyForCapture(
+  capture: Capture,
+  context: VaultContext,
+  settings: WidgetSettings,
+  currentFolder?: string,
+) {
   const input = { title: capture.title, body: capture.body, tags: capture.tags };
   const feedback = mergeFeedback(context.shared.feedback, settings.feedback);
-  const candidates = suggestPlacements(input, context.snapshot.index, feedback);
+  let candidates = suggestPlacements(input, context.snapshot.index, feedback);
+  if (currentFolder) {
+    candidates = [
+      { folder: currentFolder, score: Number.POSITIVE_INFINITY, reasons: ["сейчас здесь"] },
+      ...candidates.filter((c) => c.folder !== currentFolder),
+    ];
+  }
   return {
     capture,
     input,
-    questions: buildSurvey(candidates, context.shared.fallbackFolder, context.sections, appendableNotes(context)),
+    /** The algorithm's first suggestion, to measure its accuracy. */
+    suggested: candidates[0]?.folder ?? "",
+    questions: buildSurvey(
+      candidates,
+      context.shared.fallbackFolder,
+      context.sections,
+      currentFolder ? [] : appendableNotes(context),
+    ),
   };
 }
 
@@ -174,6 +205,8 @@ export async function fileCapture(
   answers: SurveyAnswers,
   context: VaultContext,
   settings: WidgetSettings,
+  /** The survey's first suggestion; recorded as `suggestion_hit` for the accuracy statistic. */
+  suggested?: string,
 ): Promise<{ path: string; feedback: PlacementFeedback }> {
   const { vaultPath } = settings;
   const folder = normalizeFolder(answers.folder, context.shared.fallbackFolder);
@@ -209,6 +242,7 @@ export async function fileCapture(
       answers: { folder, kind: answers.kind, importance: answers.importance },
       links,
       reviewDays: context.shared.reviewDays,
+      ...(suggested !== undefined ? { hit: folder === normalizeFolder(suggested, folder) } : {}),
     }),
   });
   return { path: `${folder}/${name}`, feedback: learnFromAnswer(settings.feedback, folder, input) };

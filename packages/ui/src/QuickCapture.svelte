@@ -10,13 +10,25 @@
     onsubmitNow?: (raw: string) => void | Promise<void>;
     /** When given, a switch offers "task to calendar": the text becomes a calendar event at the picked time. */
     oncalendar?: (raw: string, when: EventWhen) => void | Promise<void>;
+    /**
+     * When given, pictures pasted into the capture (a screenshot, an image from the clipboard) are saved by the
+     * host, which returns the text to insert (an embed such as `![[ArchiVarious/Вложения/…png]]`).
+     */
+    onimage?: (data: ArrayBuffer, mime: string) => Promise<string>;
     oncancel?: () => void;
     placeholder?: string;
     autofocus?: boolean;
   }
 
-  let { onsubmit, onsubmitNow, oncalendar, oncancel, placeholder = "Текст заметки", autofocus = true }: Props =
-    $props();
+  let {
+    onsubmit,
+    onsubmitNow,
+    oncalendar,
+    onimage,
+    oncancel,
+    placeholder = "Текст заметки",
+    autofocus = true,
+  }: Props = $props();
 
   /** The note is a title line and its text; `text` joins them the way a one-field capture would be written. */
   let title = $state("");
@@ -54,6 +66,26 @@
 
   let bodyInput = $state<HTMLTextAreaElement>();
 
+  /** Saves pasted pictures through the host and puts their embeds into the text at the cursor. */
+  async function onpaste(event: ClipboardEvent) {
+    const images = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    if (!onimage || images.length === 0) return;
+    event.preventDefault();
+    busy = true;
+    try {
+      const embeds: string[] = [];
+      for (const image of images) embeds.push(await onimage(await image.arrayBuffer(), image.type));
+      const at = bodyInput?.selectionStart ?? body.length;
+      const insert = `${at > 0 && !body.slice(0, at).endsWith("\n") ? "\n" : ""}${embeds.join("\n")}\n`;
+      body = body.slice(0, at) + insert + body.slice(at);
+    } catch (error) {
+      // The host has said what went wrong.
+      console.warn("ArchiVarious: image paste failed", error);
+    } finally {
+      busy = false;
+    }
+  }
+
   function ontitlekeydown(event: KeyboardEvent) {
     // Enter in the title goes on to the note's text.
     if (event.key === "Enter" && !(event.metaKey || event.ctrlKey)) {
@@ -85,6 +117,7 @@
     aria-label="Название"
     {autofocus}
     onkeydown={ontitlekeydown}
+    {onpaste}
     disabled={busy}
   />
   <textarea
@@ -93,6 +126,7 @@
     placeholder={mode === "calendar" ? "Подробности (необязательно)" : placeholder}
     aria-label="Текст заметки"
     {onkeydown}
+    {onpaste}
     rows="6"
     disabled={busy}
   ></textarea>
@@ -108,7 +142,7 @@
   {/if}
   <div class="archivarious-capture__actions">
     <span class="archivarious-capture__hint">
-      Ctrl/⌘ + Enter — сохранить{#if onsubmitNow && mode === "note"}, + Shift — разложить сейчас{/if}
+      Ctrl/⌘ + Enter — сохранить{#if onsubmitNow && mode === "note"}, + Shift — разложить сейчас{/if}{#if onimage && mode === "note"}. Картинку можно вставить через Ctrl+V{/if}
     </span>
     <div class="archivarious-capture__buttons">
       {#if mode === "calendar" && oncalendar}

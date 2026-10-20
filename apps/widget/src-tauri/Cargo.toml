@@ -1,6 +1,6 @@
 [package]
 name = "archivarious-widget"
-version = "0.7.0"
+version = "0.8.0"
 description = "ArchiVarious quick-capture widget app"
 authors = ["ArchiVarious"]
 license = "MIT"
@@ -21,6 +21,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 serde = { version = "1", features = ["derive"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

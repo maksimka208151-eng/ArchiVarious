@@ -26,7 +26,7 @@ pub fn write_capture(
     contents: String,
 ) -> Result<String, String> {
     let target = resolve_target(Path::new(&vault_path), &inbox_folder, &file_name)?;
-    create_new_file(&target, &contents).map_err(|e| e.to_string())?;
+    create_new_file(&target, contents.as_bytes()).map_err(|e| e.to_string())?;
     Ok(target.to_string_lossy().into_owned())
 }
 
@@ -49,7 +49,7 @@ pub fn write_note_unique(
             format!("{stem} {n}.md")
         };
         let target = resolve_target(vault, &folder, &candidate)?;
-        match create_new_file(&target, &contents) {
+        match create_new_file(&target, contents.as_bytes()) {
             Ok(()) => return Ok(candidate),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e.to_string()),
@@ -89,7 +89,7 @@ pub fn ensure_note(
     contents: String,
 ) -> Result<bool, String> {
     let target = resolve_target(Path::new(&vault_path), &folder, &file_name)?;
-    match create_new_file(&target, &contents) {
+    match create_new_file(&target, contents.as_bytes()) {
         Ok(()) => Ok(true),
         Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(false),
         Err(e) => Err(e.to_string()),
@@ -210,14 +210,14 @@ fn scan_dir(dir: &Path, relative: &str, inbox: &str, notes: &mut Vec<NoteSnippet
     }
 }
 
-fn read_head(path: &Path) -> Option<String> {
+pub(crate) fn read_head(path: &Path) -> Option<String> {
     let file = fs::File::open(path).ok()?;
     let mut bytes = Vec::new();
     file.take(SNIPPET_BYTES).read_to_end(&mut bytes).ok()?;
     Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-fn create_new_file(target: &Path, contents: &str) -> std::io::Result<()> {
+pub(crate) fn create_new_file(target: &Path, contents: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -226,17 +226,32 @@ fn create_new_file(target: &Path, contents: &str) -> std::io::Result<()> {
         .write(true)
         .create_new(true)
         .open(target)?;
-    file.write_all(contents.as_bytes())
+    file.write_all(contents)
 }
 
-fn check_vault(vault: &Path) -> Result<(), String> {
+pub(crate) fn check_vault(vault: &Path) -> Result<(), String> {
     if !vault.is_absolute() || !vault.is_dir() {
         return Err(format!("vault folder not found: {}", vault.display()));
     }
     Ok(())
 }
 
-fn resolve_target(vault: &Path, folder: &str, file_name: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_target(
+    vault: &Path,
+    folder: &str,
+    file_name: &str,
+) -> Result<PathBuf, String> {
+    resolve_file(vault, folder, file_name, &["md"])
+}
+
+/// `<vault>/<folder>/<file_name>` after checking that it stays inside the vault, outside hidden folders,
+/// and that the file name is a single name with one of the allowed extensions.
+pub(crate) fn resolve_file(
+    vault: &Path,
+    folder: &str,
+    file_name: &str,
+    extensions: &[&str],
+) -> Result<PathBuf, String> {
     check_vault(vault)?;
     let folder = Path::new(folder);
     if !folder
@@ -254,8 +269,18 @@ fn resolve_target(vault: &Path, folder: &str, file_name: &str) -> Result<PathBuf
         return Err("folder must not be a hidden folder".into());
     }
     let name = Path::new(file_name);
-    if name.components().count() != 1 || name.extension().and_then(|e| e.to_str()) != Some("md") {
-        return Err("file name must be a single .md file name".into());
+    let extension = name
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase);
+    if name.components().count() != 1
+        || !matches!(name.components().next(), Some(Component::Normal(_)))
+        || !extension.is_some_and(|e| extensions.contains(&e.as_str()))
+    {
+        return Err(format!(
+            "file name must be a single file name ending in .{}",
+            extensions.join(" / .")
+        ));
     }
     Ok(vault.join(folder).join(name))
 }

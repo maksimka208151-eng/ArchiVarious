@@ -1,5 +1,6 @@
 mod calendar;
 mod inbox;
+mod notes;
 
 #[cfg(desktop)]
 mod desktop;
@@ -30,6 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             inbox::write_capture,
             inbox::write_note_unique,
@@ -39,6 +41,12 @@ pub fn run() {
             inbox::read_plugin_data,
             inbox::read_sections,
             inbox::write_sections,
+            notes::list_inbox,
+            notes::read_note,
+            notes::write_note,
+            notes::move_note,
+            notes::trash_note,
+            notes::write_attachment,
             calendar::send_calendar_event
         ]);
 

@@ -14,17 +14,21 @@ import {
   snoozeSurvey,
   suggestPlacements,
   suggestRelatedNotes,
+  surveyPolicy,
   URI_ACTION,
 } from "@archivarious/core";
 import { obsidianLogoIcon } from "@archivarious/ui";
 import { addIcon, Notice, Plugin, requestUrl, TFile } from "obsidian";
+import { saveImage } from "./attachments";
 import { CaptureModal } from "./CaptureModal";
 import { appendableNotes, placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
 import { dueReviews, listReviews, noteTags, type ReviewEntry } from "./notes";
+import { StatsModal } from "./StatsModal";
 import { SurveyModal } from "./SurveyModal";
 import { addSections, loadSections, openSectionList } from "./sections";
 import { type ArchiVariousSettings, ArchiVariousSettingTab, DEFAULT_SETTINGS } from "./settings";
+import { collectActivity } from "./stats";
 import { buildNoteProfiles, buildVaultIndex } from "./vaultIndex";
 
 const SURVEY_CHECK_INTERVAL_MS = 5 * 60_000;
@@ -87,6 +91,11 @@ export default class ArchiVariousPlugin extends Plugin {
       },
     });
     this.addCommand({
+      id: "show-statistics",
+      name: "Show statistics",
+      callback: () => new StatsModal(this.app, collectActivity(this.app, this.settings.inboxFolder)).open(),
+    });
+    this.addCommand({
       id: "edit-sections",
       name: "Edit sections",
       callback: () => openSectionList(this.app),
@@ -129,6 +138,7 @@ export default class ArchiVariousPlugin extends Plugin {
       this.app,
       (raw, now) => this.capture(raw, "plugin", now),
       (raw, when) => this.addToCalendar(raw, when),
+      (data, mime) => saveImage(this.app, data, mime),
     ).open();
   }
 
@@ -251,10 +261,7 @@ export default class ArchiVariousPlugin extends Plugin {
         }),
       skip: () =>
         this.app.fileManager.processFrontMatter(review.file, (fm) => {
-          fm.review_at = snoozeSurvey(new Date(), {
-            delayMinutes: this.settings.surveyDelayMinutes,
-            snoozeMinutes: this.settings.snoozeMinutes,
-          }).toISOString();
+          fm.review_at = snoozeSurvey(new Date(), surveyPolicy(this.settings)).toISOString();
         }),
     };
   }
@@ -286,6 +293,13 @@ export default class ArchiVariousPlugin extends Plugin {
           (n) => n.path,
         );
         const placed = await subject.place(answers, related);
+        if (!answers.appendTo) {
+          // For the statistics: when the note was sorted, and (for new captures) whether the first suggestion was kept.
+          await this.app.fileManager.processFrontMatter(placed, (fm) => {
+            fm.filed = new Date().toISOString();
+            if (subject.appendable) fm.suggestion_hit = answers.folder === candidates[0]?.folder;
+          });
+        }
         this.settings.feedback = learnFromAnswer(this.settings.feedback, answers.folder, input);
         await this.saveSettings();
         new Notice(`ArchiVarious: → ${placed.path}`);
