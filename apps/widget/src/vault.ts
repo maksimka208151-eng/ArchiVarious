@@ -214,6 +214,12 @@ export async function fileCapture(
   return { path: `${folder}/${name}`, feedback: learnFromAnswer(settings.feedback, folder, input) };
 }
 
+/** Opens a vault note in Obsidian, so the user can keep writing in it. */
+export async function openInObsidian(path: string, settings: WidgetSettings): Promise<void> {
+  const vault = settings.vaultName || settings.vaultPath.split(/[\\/]/).filter(Boolean).pop() || "";
+  await openUrl(`obsidian://open?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(path)}`);
+}
+
 /** The calendar set-up in use: the widget's own, else the plugin's (read from the vault). */
 export async function calendarConfig(settings: WidgetSettings): Promise<{ url: string; key: string }> {
   if (settings.calendarUrl && settings.calendarKey) return { url: settings.calendarUrl, key: settings.calendarKey };

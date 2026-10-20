@@ -19,6 +19,7 @@
     fileCapture,
     loadSettings,
     loadVaultContext,
+    openInObsidian,
     prepareSurvey,
     readSharedSettings,
     saveSettings,
@@ -32,9 +33,11 @@
   let settings = $state(loadSettings());
   let view = $state<"bar" | "survey" | "settings">(settings.vaultPath ? "bar" : "settings");
   let text = $state("");
-  /** The note's own text under the title line; the field opens with the note button or Shift+Enter. */
+  /** The note's own text under the title line; the field appears as soon as the title is typed. */
   let body = $state("");
   let expanded = $state(false);
+  /** The note just filed, offered as "Открыть в Obsidian" so the user can keep writing in it. */
+  let lastFiled = $state<string | null>(null);
   let bodyInput = $state<HTMLTextAreaElement>();
   let busy = $state(false);
   let status = $state({ text: "", error: false });
@@ -62,7 +65,8 @@
   let root: HTMLElement;
   let input = $state<HTMLTextAreaElement>();
   let contextPromise: Promise<VaultContext> | null = null;
-  const hasText = $derived(Boolean(text.trim() || (expanded && body.trim())));
+  const showBody = $derived(view === "bar" && mode === "note" && (expanded || text.trim() !== "" || body.trim() !== ""));
+  const hasText = $derived(Boolean(text.trim() || (showBody && body.trim())));
   let statusTimer: number | undefined;
 
   const win = getCurrentWindow();
@@ -93,6 +97,7 @@
   }
 
   function flash(message: string, error = false) {
+    lastFiled = null;
     status = { text: message, error };
     window.clearTimeout(statusTimer);
     if (!error) statusTimer = window.setTimeout(() => (status = { text: "", error: false }), 3500);
@@ -137,7 +142,7 @@
   /** The capture as one text: the bar is the first line (the note's title), the text field follows it. */
   function noteText(): string {
     const title = text.trim();
-    const rest = expanded ? body.trim() : "";
+    const rest = showBody ? body.trim() : "";
     return title && rest ? `${title}\n\n${rest}` : title || rest;
   }
 
@@ -147,10 +152,10 @@
     expanded = false;
   }
 
-  async function toggleBody() {
-    expanded = !expanded;
+  async function openBody() {
+    expanded = true;
     await tick();
-    (expanded ? bodyInput : input)?.focus();
+    bodyInput?.focus();
   }
 
   async function save() {
@@ -199,6 +204,10 @@
       survey = null;
       view = "bar";
       flash(`Разложено → ${result.path}`);
+      lastFiled = result.path;
+      // Long enough to reach "Открыть в Obsidian".
+      window.clearTimeout(statusTimer);
+      statusTimer = window.setTimeout(() => (status = { text: "", error: false }), 12000);
       queueMicrotask(resize);
     } catch (error) {
       flash(`Ошибка: ${String(error)}`, true);
@@ -216,8 +225,7 @@
     if (event.key === "Enter" && event.shiftKey && mode === "note") {
       // Shift+Enter goes on to the note's text instead of a second line in the bar.
       event.preventDefault();
-      if (expanded) bodyInput?.focus();
-      else void toggleBody();
+      void openBody();
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -343,7 +351,7 @@
           if (settings.vaultPath) void vaultContext();
         }}
         rows="1"
-        placeholder={mode === "calendar" ? "Что сделать и когда?" : "Что запомнить?"}
+        placeholder={mode === "calendar" ? "Что сделать и когда?" : "Название заметки"}
         spellcheck="false"
         disabled={busy}
       ></textarea>
@@ -358,17 +366,6 @@
           onclick={sortNow}><Icon name="bolt" /></button
         >
       {/if}
-      {#if mode === "note"}
-        <button
-          type="button"
-          class="icon"
-          class:is-on={expanded}
-          title={expanded ? "Убрать текст заметки" : "Текст заметки (Shift+Enter)"}
-          aria-label="Текст заметки"
-          aria-pressed={expanded}
-          onclick={toggleBody}><Icon name="note" /></button
-        >
-      {/if}
       <button type="button" class="icon" title="Настройки" aria-label="Настройки" onclick={openSettings}
         ><Icon name="settings" /></button
       >
@@ -379,14 +376,14 @@
     {/if}
   </div>
 
-  {#if view === "bar" && mode === "note" && expanded}
+  {#if showBody}
     <section class="panel">
       <textarea
         bind:this={bodyInput}
         bind:value={body}
         class="body"
         rows="6"
-        placeholder="Текст заметки"
+        placeholder="Текст заметки (необязательно)"
         spellcheck="false"
         disabled={busy}
         onkeydown={(event) => {
@@ -471,7 +468,14 @@
   {/if}
 
   {#if status.text && (view !== "settings" || status.error)}
-    <div class="status" class:error={status.error} role="status">{status.text}</div>
+    <div class="status" class:error={status.error} role="status">
+      {status.text}
+      {#if lastFiled && !status.error}
+        <button type="button" class="link" onclick={() => lastFiled && void openInObsidian(lastFiled, settings)}
+          >Открыть в Obsidian</button
+        >
+      {/if}
+    </div>
   {/if}
 </main>
 
@@ -664,9 +668,15 @@
     font-size: 14px;
     overflow-y: auto;
   }
-  .icon.is-on {
-    background: var(--chip);
+  .link {
+    margin-left: 6px;
+    padding: 0;
+    border: none;
+    background: none;
     color: var(--accent);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
   }
   .primary {
     display: inline-flex;

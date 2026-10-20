@@ -15,10 +15,15 @@
     autofocus?: boolean;
   }
 
-  let { onsubmit, onsubmitNow, oncalendar, oncancel, placeholder = "Что запомнить?", autofocus = true }: Props =
+  let { onsubmit, onsubmitNow, oncalendar, oncancel, placeholder = "Текст заметки", autofocus = true }: Props =
     $props();
 
-  let text = $state("");
+  /** The note is a title line and its text; `text` joins them the way a one-field capture would be written. */
+  let title = $state("");
+  let body = $state("");
+  const text = $derived(
+    title.trim() && body.trim() ? `${title.trim()}\n\n${body.trim()}` : title.trim() || body.trim(),
+  );
   let busy = $state(false);
   let mode = $state<CaptureMode>("note");
   let when = $state<EventWhen>(suggestWhen(""));
@@ -36,7 +41,8 @@
     try {
       if (mode === "calendar" && oncalendar) await oncalendar(text, when);
       else await (now && onsubmitNow ? onsubmitNow : onsubmit)(text);
-      text = "";
+      title = "";
+      body = "";
       touched = false;
     } catch (error) {
       // The host has told the user what went wrong; the text stays so nothing is lost.
@@ -44,6 +50,16 @@
     } finally {
       busy = false;
     }
+  }
+
+  let bodyInput = $state<HTMLTextAreaElement>();
+
+  function ontitlekeydown(event: KeyboardEvent) {
+    // Enter in the title goes on to the note's text.
+    if (event.key === "Enter" && !(event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      bodyInput?.focus();
+    } else onkeydown(event);
   }
 
   function onkeydown(event: KeyboardEvent) {
@@ -61,13 +77,30 @@
     <ModeSwitch bind:mode />
   {/if}
   <!-- svelte-ignore a11y_autofocus -->
-  <textarea bind:value={text} {placeholder} {autofocus} {onkeydown} rows="4" disabled={busy}></textarea>
+  <input
+    class="archivarious-capture__title"
+    type="text"
+    bind:value={title}
+    placeholder={mode === "calendar" ? "Что сделать и когда?" : "Название"}
+    aria-label="Название"
+    {autofocus}
+    onkeydown={ontitlekeydown}
+    disabled={busy}
+  />
+  <textarea
+    bind:this={bodyInput}
+    bind:value={body}
+    placeholder={mode === "calendar" ? "Подробности (необязательно)" : placeholder}
+    aria-label="Текст заметки"
+    {onkeydown}
+    rows="6"
+    disabled={busy}
+  ></textarea>
   {#if mode === "calendar" && oncalendar}
     <EventFields bind:when ontouch={() => (touched = true)} />
   {/if}
-  {#if preview}
+  {#if preview && preview.tags.length > 0}
     <div class="archivarious-capture__preview">
-      <strong>{preview.title}</strong>
       {#each preview.tags as tag (tag)}
         <span class="archivarious-capture__tag">#{tag}</span>
       {/each}
@@ -75,7 +108,7 @@
   {/if}
   <div class="archivarious-capture__actions">
     <span class="archivarious-capture__hint">
-      Ctrl/⌘ + Enter{#if onsubmitNow && mode === "note"}&nbsp;· разложить сейчас: + Shift{/if}
+      Ctrl/⌘ + Enter — сохранить{#if onsubmitNow && mode === "note"}, + Shift — разложить сейчас{/if}
     </span>
     <div class="archivarious-capture__buttons">
       {#if mode === "calendar" && oncalendar}
@@ -99,6 +132,13 @@
   }
   .archivarious-capture > :global(.archivarious-mode) {
     align-self: flex-start;
+  }
+  .archivarious-capture__title {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 1.1em;
+    font-weight: 600;
   }
   textarea {
     width: 100%;

@@ -41,6 +41,8 @@ interface SurveySubject {
   defaults?: Record<string, string>;
   /** A new capture can also be added to an existing note, not only filed as a note of its own. */
   appendable?: boolean;
+  /** Open the note once it is filed, so the user can keep writing in it ("sort now" from the capture window). */
+  openAfter?: boolean;
   place(answers: SurveyAnswers, related: string[]): Promise<TFile>;
   skip(): Promise<void>;
 }
@@ -162,7 +164,7 @@ export default class ArchiVariousPlugin extends Plugin {
     const file = await this.inbox.add(raw, source);
     const entry = sortNow ? await this.inbox.entry(file) : null;
     if (entry && !this.surveyOpen) {
-      void this.openSurvey(this.inboxSubject(entry));
+      void this.openSurvey({ ...this.inboxSubject(entry), openAfter: true });
     } else {
       new Notice("ArchiVarious: сохранено во входящие");
     }
@@ -287,6 +289,7 @@ export default class ArchiVariousPlugin extends Plugin {
         this.settings.feedback = learnFromAnswer(this.settings.feedback, answers.folder, input);
         await this.saveSettings();
         new Notice(`ArchiVarious: → ${placed.path}`);
+        if (subject.openAfter) await this.app.workspace.getLeaf(false).openFile(placed);
         this.skipped.add(subject.key).add(placed.path);
         void this.runQueue();
       },

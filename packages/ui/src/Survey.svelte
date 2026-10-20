@@ -15,14 +15,12 @@
 
   let { questions, defaults = {}, submitLabel = "Разложить", skipLabel = "Позже", onanswer, onskip }: Props = $props();
 
-  const split = (path: string) => {
-    const [top = "", ...rest] = sectionPath(path).split("/");
-    return { top, rest: rest.join("/") };
-  };
+  const segments = (path: string) => sectionPath(path).split("/").filter(Boolean);
 
   // Read once on mount: a survey is built for one note and never re-targeted.
   const setup = () => {
-    // The folder question is shown as two rows: section (top-level folder) and subsection (the rest of the path).
+    // The folder question is shown as one row per level: the top-level folders, then the folders inside the
+    // chosen one, and so on, so sections can be nested as deep as the user wants.
     const folderQuestion = questions.find((q) => q.id === "folder");
     const otherQuestions = questions.filter((q) => q.id !== "folder");
     // Each question starts on its preselected (or first) option, so a confident user answers with one click.
@@ -35,8 +33,7 @@
     const paths = (folderQuestion?.options ?? []).map((o) => sectionPath(o.value)).filter(Boolean);
     const preset = sectionPath(defaults.folder ?? "");
     if (preset && !paths.includes(preset)) paths.unshift(preset);
-    const { top, rest } = split(preset || paths[0] || "");
-    return { folderQuestion, otherQuestions, answers, paths, section: top, sub: rest };
+    return { folderQuestion, otherQuestions, answers, paths, chain: segments(preset || paths[0] || "") };
   };
   const init = setup();
   const { folderQuestion, otherQuestions } = init;
@@ -45,40 +42,49 @@
   let busy = $state(false);
   let paths = $state<string[]>(init.paths);
   let created = $state<string[]>([]);
-  let section = $state(init.section);
-  let sub = $state(init.sub);
+  /** The chosen folder, one name per level: `["Учеба", "Математика"]`. */
+  let chain = $state<string[]>(init.chain);
 
-  const sections = $derived([...new Set(paths.map((p) => split(p).top))]);
-  const subsections = $derived([
-    ...new Set(paths.filter((p) => split(p).top === section && split(p).rest).map((p) => split(p).rest)),
-  ]);
-  const folder = $derived(section ? (sub ? `${section}/${sub}` : section) : "");
+  /** Folder names directly inside `parent` (the top level for `[]`), from every known path and its parents. */
+  const childrenOf = (parent: string[]) => {
+    const names: string[] = [];
+    for (const p of paths) {
+      const parts = segments(p);
+      const name = parts[parent.length];
+      if (name && parent.every((n, i) => parts[i] === n) && !names.includes(name)) names.push(name);
+    }
+    return names;
+  };
+  /** Rows to show: the top level, then one row inside each chosen folder. */
+  const levels = $derived(Array.from({ length: chain.length + 1 }, (_, i) => chain.slice(0, i)));
+  const folder = $derived(chain.join("/"));
 
   /** Options of a question for the chosen folder (the notes to append to depend on it). */
   const optionsOf = (question: SurveyQuestion) => question.optionsByFolder?.[folder] ?? question.options;
 
-  /** Inline "new section" / "new subsection" field; the new folder is created when the note is filed. */
-  let creating = $state<"section" | "sub" | null>(null);
+  /** Inline "new folder" field at one level; the folder is created when the note is filed. */
+  let creating = $state<number | null>(null);
   let newName = $state("");
   let newInput = $state<HTMLInputElement>();
 
-  async function startCreating(kind: "section" | "sub") {
-    creating = kind;
+  async function startCreating(level: number) {
+    creating = level;
     newName = "";
     await tick();
     newInput?.focus();
   }
 
   function confirmCreating() {
-    // Enter confirms and removes the field, which then blurs; that blur must not create the section again.
-    if (!creating) return;
+    // Enter confirms and removes the field, which then blurs; that blur must not create the folder again.
+    if (creating === null) return;
     const name = sectionPath(newName);
     newName = "";
     if (name) {
-      const path = creating === "sub" && section ? `${section}/${name}` : name;
+      const next = [...chain.slice(0, creating), ...segments(name)];
+      const path = next.join("/");
       if (!paths.includes(path)) paths.push(path);
       if (!created.includes(path)) created.push(path);
-      ({ top: section, rest: sub } = split(path));
+      chain = next;
     }
     creating = null;
   }
@@ -103,7 +109,7 @@
 
   async function submit() {
     if (busy || !folder) return;
-    if (creating) confirmCreating();
+    if (creating !== null) confirmCreating();
     busy = true;
     try {
       await onanswer({
@@ -139,50 +145,42 @@
 <div class="archivarious-survey">
   {#if folderQuestion}
     <div class="archivarious-survey__question">
-      <div class="archivarious-survey__prompt">{folderQuestion.prompt}</div>
-      <div class="archivarious-survey__options">
-        {#each sections as name (name)}
-          <button
-            type="button"
-            class:is-selected={section === name}
-            onclick={() => {
-              if (section !== name) sub = "";
-              section = name;
-            }}>{name}</button
-          >
-        {/each}
-        {#if folderQuestion.allowCustom && creating !== "section"}
-          <button type="button" class="archivarious-survey__add" onclick={() => startCreating("section")}
-            ><Icon name="plus" size={14} />раздел</button
-          >
-        {/if}
-      </div>
-      {#if section}
-        <div class="archivarious-survey__prompt archivarious-survey__prompt--sub">Подраздел</div>
+      {#each levels as parent, level (parent.join("/"))}
+        <div class="archivarious-survey__prompt" class:archivarious-survey__prompt--sub={level > 0}>
+          {level === 0 ? folderQuestion.prompt : `Внутри «${parent[parent.length - 1]}»`}
+        </div>
         <div class="archivarious-survey__options">
-          <button type="button" class:is-selected={!sub} onclick={() => (sub = "")}>весь «{section}»</button>
-          {#each subsections as name (name)}
-            <button type="button" class:is-selected={sub === name} onclick={() => (sub = name)}>{name}</button>
+          {#if level > 0}
+            <button type="button" class:is-selected={chain.length === level} onclick={() => (chain = parent)}
+              >прямо в «{parent[parent.length - 1]}»</button
+            >
+          {/if}
+          {#each childrenOf(parent) as name (name)}
+            <button
+              type="button"
+              class:is-selected={chain[level] === name}
+              onclick={() => (chain = [...parent, name])}>{name}</button
+            >
           {/each}
-          {#if folderQuestion.allowCustom && creating !== "sub"}
-            <button type="button" class="archivarious-survey__add" onclick={() => startCreating("sub")}
-              ><Icon name="plus" size={14} />подраздел</button
+          {#if folderQuestion.allowCustom && creating !== level}
+            <button type="button" class="archivarious-survey__add" onclick={() => startCreating(level)}
+              ><Icon name="plus" size={14} />{level === 0 ? "раздел" : "подраздел"}</button
             >
           {/if}
         </div>
-      {/if}
-      {#if creating}
-        <input
-          bind:this={newInput}
-          class="archivarious-survey__custom"
-          type="text"
-          placeholder={creating === "sub" ? `Новый подраздел в «${section}», Enter — добавить` : "Новый раздел, Enter — добавить"}
-          aria-label={creating === "sub" ? "Новый подраздел" : "Новый раздел"}
-          bind:value={newName}
-          onkeydown={onNewKeydown}
-          onblur={() => (newName.trim() ? confirmCreating() : (creating = null))}
-        />
-      {/if}
+        {#if creating === level}
+          <input
+            bind:this={newInput}
+            class="archivarious-survey__custom"
+            type="text"
+            placeholder={level === 0 ? "Новый раздел, Enter — добавить" : `Новый подраздел в «${parent[parent.length - 1]}», Enter — добавить`}
+            aria-label={level === 0 ? "Новый раздел" : "Новый подраздел"}
+            bind:value={newName}
+            onkeydown={onNewKeydown}
+            onblur={() => (newName.trim() ? confirmCreating() : (creating = null))}
+          />
+        {/if}
+      {/each}
     </div>
   {/if}
   {#each otherQuestions as question (question.id)}
