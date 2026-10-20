@@ -54,6 +54,9 @@
   ]);
   const folder = $derived(section ? (sub ? `${section}/${sub}` : section) : "");
 
+  /** Options of a question for the chosen folder (the notes to append to depend on it). */
+  const optionsOf = (question: SurveyQuestion) => question.optionsByFolder?.[folder] ?? question.options;
+
   /** Inline "new section" / "new subsection" field; the new folder is created when the note is filed. */
   let creating = $state<"section" | "sub" | null>(null);
   let newName = $state("");
@@ -90,6 +93,14 @@
     }
   }
 
+  /** The note the capture is added to; empty (a new note) unless it is one of the folder's notes. */
+  const appendQuestion = otherQuestions.find((q) => q.id === "append");
+  const appendTo = $derived(
+    appendQuestion && optionsOf(appendQuestion).some((o) => o.value === answers.append && o.value !== "")
+      ? answers.append
+      : "",
+  );
+
   async function submit() {
     if (busy || !folder) return;
     if (creating) confirmCreating();
@@ -100,6 +111,7 @@
         kind: (answers.kind ?? "fact") as SurveyAnswers["kind"],
         importance: Number(answers.importance ?? 1) as SurveyAnswers["importance"],
         ...(created.length > 0 ? { createdSections: [...created] } : {}),
+        ...(appendTo ? { appendTo } : {}),
       });
     } finally {
       busy = false;
@@ -174,18 +186,21 @@
     </div>
   {/if}
   {#each otherQuestions as question (question.id)}
-    <div class="archivarious-survey__question">
-      <div class="archivarious-survey__prompt">{question.prompt}</div>
-      <div class="archivarious-survey__options">
-        {#each question.options as option (option.value)}
-          <button
-            type="button"
-            class:is-selected={answers[question.id] === option.value}
-            onclick={() => (answers[question.id] = option.value)}>{option.label}</button
-          >
-        {/each}
+    <!-- The "В заметку" row is only shown when the chosen folder has notes to add to. -->
+    {#if optionsOf(question).length > 1 || !question.optionsByFolder}
+      <div class="archivarious-survey__question">
+        <div class="archivarious-survey__prompt">{question.prompt}</div>
+        <div class="archivarious-survey__options">
+          {#each optionsOf(question) as option (option.value)}
+            <button
+              type="button"
+              class:is-selected={answers[question.id] === option.value}
+              onclick={() => (answers[question.id] = option.value)}>{option.label}</button
+            >
+          {/each}
+        </div>
       </div>
-    </div>
+    {/if}
   {/each}
   <div class="archivarious-survey__actions">
     <button type="button" onclick={() => onskip()} disabled={busy}>{skipLabel}</button>

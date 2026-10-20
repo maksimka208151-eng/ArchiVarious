@@ -19,7 +19,7 @@ import {
 import { obsidianLogoIcon } from "@archivarious/ui";
 import { addIcon, Notice, Plugin, requestUrl, TFile } from "obsidian";
 import { CaptureModal } from "./CaptureModal";
-import { placeNote, surveyBody } from "./filing";
+import { appendableNotes, placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
 import { dueReviews, listReviews, noteTags, type ReviewEntry } from "./notes";
 import { SurveyModal } from "./SurveyModal";
@@ -39,6 +39,8 @@ interface SurveySubject {
   /** Folder the note is in now; offered first so "it's fine where it is" is one tap. */
   currentFolder?: string;
   defaults?: Record<string, string>;
+  /** A new capture can also be added to an existing note, not only filed as a note of its own. */
+  appendable?: boolean;
   place(answers: SurveyAnswers, related: string[]): Promise<TFile>;
   skip(): Promise<void>;
 }
@@ -213,6 +215,7 @@ export default class ArchiVariousPlugin extends Plugin {
       title: capture.title,
       body: capture.body,
       tags: capture.tags,
+      appendable: true,
       place: (answers, related) => this.inbox.file(entry, answers, related),
       skip: () => this.inbox.snooze(entry),
     };
@@ -266,7 +269,8 @@ export default class ArchiVariousPlugin extends Plugin {
       candidates = candidates.filter((c, i) => i === 0 || c.folder !== current);
     }
     const sections = await loadSections(this.app).catch(() => []);
-    const questions = buildSurvey(candidates, this.settings.fallbackFolder, sections);
+    const appendable = subject.appendable ? appendableNotes(this.app, this.settings.inboxFolder) : [];
+    const questions = buildSurvey(candidates, this.settings.fallbackFolder, sections, appendable);
 
     new SurveyModal(
       this.app,

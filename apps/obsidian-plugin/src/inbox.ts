@@ -1,4 +1,5 @@
 import {
+  appendEntry,
   type Capture,
   type CaptureSource,
   captureFileName,
@@ -9,7 +10,7 @@ import {
   serializeCapture,
   snoozeSurvey,
 } from "@archivarious/core";
-import { type App, normalizePath, type TFile } from "obsidian";
+import { type App, normalizePath, TFile } from "obsidian";
 import { ensureFolder, placeNote } from "./filing";
 import type { ArchiVariousSettings } from "./settings";
 
@@ -64,6 +65,7 @@ export class Inbox {
 
   /** Turns the capture into a regular note in its final folder, keeping provenance in frontmatter. */
   async file(entry: InboxEntry, answers: SurveyAnswers, related: string[] = []): Promise<TFile> {
+    if (answers.appendTo) return this.appendTo(entry, answers.appendTo);
     const { capture } = entry;
     await this.app.vault.process(entry.file, () => `${capture.body}\n`);
     return placeNote(this.app, this.settings(), entry.file, answers, {
@@ -76,6 +78,16 @@ export class Inbox {
         ...(capture.links.length > 0 ? { links: capture.links } : {}),
       },
     });
+  }
+
+  /** Adds the capture's text to the end of an existing note, and removes the capture's own file. */
+  private async appendTo(entry: InboxEntry, path: string): Promise<TFile> {
+    const target = this.app.vault.getAbstractFileByPath(path);
+    if (!(target instanceof TFile)) throw new Error(`Заметка «${path}» не найдена`);
+    const when = new Date(entry.capture.createdAt);
+    await this.app.vault.process(target, (text) => appendEntry(text, entry.capture.body, when));
+    await this.app.fileManager.trashFile(entry.file);
+    return target;
   }
 
   private async ensureFolder(folder: string): Promise<void> {

@@ -33,6 +33,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             inbox::write_capture,
             inbox::write_note_unique,
+            inbox::append_to_note,
             inbox::ensure_note,
             inbox::scan_vault,
             inbox::read_plugin_data,

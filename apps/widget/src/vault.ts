@@ -1,4 +1,5 @@
 import {
+  type AppendableNote,
   addSection,
   buildCalendarEvent,
   buildCaptureUri,
@@ -8,6 +9,7 @@ import {
   calendarRequestBody,
   captureFileName,
   type EventWhen,
+  entryBlock,
   hubNote,
   isAppsScriptUrl,
   learnFromAnswer,
@@ -21,6 +23,7 @@ import {
   parseCalendarResponse,
   parseSections,
   parseSharedSettings,
+  SECTIONS_FILE,
   type SharedSettings,
   type SurveyAnswers,
   serializeCapture,
@@ -140,10 +143,23 @@ export function prepareSurvey(raw: string, context: VaultContext, settings: Widg
   const input = { title: capture.title, body: capture.body, tags: capture.tags };
   const feedback = mergeFeedback(context.shared.feedback, settings.feedback);
   const candidates = suggestPlacements(input, context.snapshot.index, feedback);
-  return { capture, input, questions: buildSurvey(candidates, context.shared.fallbackFolder, context.sections) };
+  return {
+    capture,
+    input,
+    questions: buildSurvey(candidates, context.shared.fallbackFolder, context.sections, appendableNotes(context)),
+  };
 }
 
 /** `Learning\Deep/` → `Learning/Deep`; empty falls back to the plugin's fallback folder. */
+/** Existing notes a capture can be added to: outside the inbox, in a folder, and not a folder hub. */
+function appendableNotes(context: VaultContext): AppendableNote[] {
+  const inbox = `${context.shared.inboxFolder}/`;
+  return context.snapshot.notes
+    .filter((n) => n.path.includes("/") && !n.path.startsWith(inbox) && n.path !== SECTIONS_FILE)
+    .map((n) => ({ folder: n.path.slice(0, n.path.lastIndexOf("/")), path: n.path, title: n.title }))
+    .filter((n) => n.title !== n.folder.split("/").pop());
+}
+
 export function normalizeFolder(folder: string, fallback: string): string {
   const clean = folder
     .replace(/\\/g, "/")
@@ -163,6 +179,12 @@ export async function fileCapture(
   const folder = normalizeFolder(answers.folder, context.shared.fallbackFolder);
   const input = { title: capture.title, body: capture.body, tags: capture.tags };
   await addSections(vaultPath, answers.createdSections ?? []);
+
+  if (answers.appendTo) {
+    const block = entryBlock(capture.body, new Date(capture.createdAt));
+    await invoke("append_to_note", { vaultPath, path: answers.appendTo, block });
+    return { path: answers.appendTo, feedback: learnFromAnswer(settings.feedback, folder, input) };
+  }
 
   const links: NoteRef[] = [];
   if (context.shared.linkFolderHub) {

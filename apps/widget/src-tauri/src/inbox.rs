@@ -58,6 +58,28 @@ pub fn write_note_unique(
     Err("too many notes with the same name".into())
 }
 
+/// Adds an entry to the end of an existing note. `block` is the entry as Markdown (`entryBlock` in core);
+/// the separator before it is chosen from how the note already ends, so nothing above it changes.
+#[tauri::command]
+pub fn append_to_note(vault_path: String, path: String, block: String) -> Result<(), String> {
+    let (folder, file_name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+    let target = resolve_target(Path::new(&vault_path), folder, file_name)?;
+    let existing = fs::read_to_string(&target).map_err(|e| e.to_string())?;
+    let separator = if existing.trim().is_empty() || existing.ends_with("\n\n") {
+        ""
+    } else if existing.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    };
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(&target)
+        .map_err(|e| e.to_string())?;
+    file.write_all(format!("{separator}{block}").as_bytes())
+        .map_err(|e| e.to_string())
+}
+
 /// Creates the note only if it does not exist yet (folder hub notes). Returns whether it was created.
 #[tauri::command]
 pub fn ensure_note(
@@ -283,6 +305,22 @@ mod tests {
 
         let (v, i, f, c) = args();
         assert!(write_capture(v, i, f, c).is_err());
+        fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
+    fn appends_an_entry_after_the_existing_text() {
+        let vault = temp_vault("append");
+        fs::create_dir_all(vault.join("Learning")).unwrap();
+        fs::write(vault.join("Learning/Ideas.md"), "# Ideas\n").unwrap();
+        append_to_note(s(&vault), "Learning/Ideas.md".into(), "### one\n".into()).unwrap();
+        append_to_note(s(&vault), "Learning/Ideas.md".into(), "### two\n".into()).unwrap();
+        assert_eq!(
+            fs::read_to_string(vault.join("Learning/Ideas.md")).unwrap(),
+            "# Ideas\n\n### one\n\n### two\n"
+        );
+        assert!(append_to_note(s(&vault), "Learning/Missing.md".into(), "x".into()).is_err());
+        assert!(append_to_note(s(&vault), "../Ideas.md".into(), "x".into()).is_err());
         fs::remove_dir_all(&vault).unwrap();
     }
 
