@@ -13,7 +13,7 @@
   import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     calendarConfig,
     fileCapture,
@@ -32,6 +32,10 @@
   let settings = $state(loadSettings());
   let view = $state<"bar" | "survey" | "settings">(settings.vaultPath ? "bar" : "settings");
   let text = $state("");
+  /** The note's own text under the title line; the field opens with the note button or Shift+Enter. */
+  let body = $state("");
+  let expanded = $state(false);
+  let bodyInput = $state<HTMLTextAreaElement>();
   let busy = $state(false);
   let status = $state({ text: "", error: false });
   let survey = $state<{ capture: Capture; questions: SurveyQuestion[] } | null>(null);
@@ -58,6 +62,7 @@
   let root: HTMLElement;
   let input = $state<HTMLTextAreaElement>();
   let contextPromise: Promise<VaultContext> | null = null;
+  const hasText = $derived(Boolean(text.trim() || (expanded && body.trim())));
   let statusTimer: number | undefined;
 
   const win = getCurrentWindow();
@@ -129,14 +134,33 @@
     }
   }
 
+  /** The capture as one text: the bar is the first line (the note's title), the text field follows it. */
+  function noteText(): string {
+    const title = text.trim();
+    const rest = expanded ? body.trim() : "";
+    return title && rest ? `${title}\n\n${rest}` : title || rest;
+  }
+
+  function clearNote() {
+    text = "";
+    body = "";
+    expanded = false;
+  }
+
+  async function toggleBody() {
+    expanded = !expanded;
+    await tick();
+    (expanded ? bodyInput : input)?.focus();
+  }
+
   async function save() {
     if (mode === "calendar") return toCalendar();
-    const raw = text.trim();
+    const raw = noteText();
     if (!raw || busy) return;
     busy = true;
     try {
       await sendCapture(raw, settings, "widget-desktop");
-      text = "";
+      clearNote();
       contextPromise = null;
       flash("Сохранено во входящие");
     } catch (error) {
@@ -148,7 +172,7 @@
   }
 
   async function sortNow() {
-    const raw = text.trim();
+    const raw = noteText();
     if (!raw || busy || !settings.vaultPath) return;
     busy = true;
     flash("Читаю хранилище…");
@@ -171,7 +195,7 @@
       settings.feedback = result.feedback;
       saveSettings($state.snapshot(settings));
       contextPromise = null;
-      text = "";
+      clearNote();
       survey = null;
       view = "bar";
       flash(`Разложено → ${result.path}`);
@@ -189,7 +213,12 @@
   }
 
   function onkeydown(event: KeyboardEvent) {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && event.shiftKey && mode === "note") {
+      // Shift+Enter goes on to the note's text instead of a second line in the bar.
+      event.preventDefault();
+      if (expanded) bodyInput?.focus();
+      else void toggleBody();
+    } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
       if ((event.ctrlKey || event.metaKey) && mode === "note") void sortNow();
@@ -325,8 +354,19 @@
           class="icon"
           title="Разложить сейчас (Ctrl+Enter)"
           aria-label="Разложить сейчас"
-          disabled={busy || !text.trim()}
+          disabled={busy || !hasText}
           onclick={sortNow}><Icon name="bolt" /></button
+        >
+      {/if}
+      {#if mode === "note"}
+        <button
+          type="button"
+          class="icon"
+          class:is-on={expanded}
+          title={expanded ? "Убрать текст заметки" : "Текст заметки (Shift+Enter)"}
+          aria-label="Текст заметки"
+          aria-pressed={expanded}
+          onclick={toggleBody}><Icon name="note" /></button
         >
       {/if}
       <button type="button" class="icon" title="Настройки" aria-label="Настройки" onclick={openSettings}
@@ -339,7 +379,38 @@
     {/if}
   </div>
 
-  {#if view === "bar" && mode === "calendar"}
+  {#if view === "bar" && mode === "note" && expanded}
+    <section class="panel">
+      <textarea
+        bind:this={bodyInput}
+        bind:value={body}
+        class="body"
+        rows="6"
+        placeholder="Текст заметки"
+        spellcheck="false"
+        disabled={busy}
+        onkeydown={(event) => {
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            void save();
+          } else if (event.key === "Escape") {
+            dismiss();
+          }
+        }}
+      ></textarea>
+      <div class="actions">
+        <span class="hint">Ctrl+Enter — сохранить</span>
+        {#if settings.vaultPath}
+          <button type="button" disabled={busy || !hasText} onclick={sortNow}
+            ><Icon name="bolt" size={16} />Разложить</button
+          >
+        {/if}
+        <button type="button" class="primary" disabled={busy || !hasText} onclick={save}
+          ><Icon name="check" size={16} />Сохранить</button
+        >
+      </div>
+    </section>
+  {:else if view === "bar" && mode === "calendar"}
     <section class="panel calendar">
       <EventFields bind:when ontouch={() => (touched = true)} />
       <div class="actions">
@@ -571,7 +642,31 @@
   .actions {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     gap: 6px;
+  }
+  .actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hint {
+    margin-right: auto;
+    font-size: 0.8em;
+    color: var(--text-soft);
+  }
+  textarea.body {
+    flex: none;
+    max-height: 240px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: var(--chip);
+    font-size: 14px;
+    overflow-y: auto;
+  }
+  .icon.is-on {
+    background: var(--chip);
+    color: var(--accent);
   }
   .primary {
     display: inline-flex;

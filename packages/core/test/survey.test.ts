@@ -14,10 +14,10 @@ describe("buildSurvey: append to a note", () => {
 
   it("offers a new note, and only the notes of the chosen folder", () => {
     const append = buildSurvey(candidates, "Inbox", ["Работа"], notes).find((q) => q.id === "append");
-    expect(append?.optionsByFolder?.["Учеба"]).toEqual([
+    expect(append?.optionsByFolder?.Учеба).toEqual([
       { value: "", label: "Новая заметка" },
       { value: "Учеба/Идеи.md", label: "Идеи" },
     ]);
-    expect(append?.optionsByFolder?.["Работа"]?.map((o) => o.value)).toEqual(["", "Работа/Планы.md"]);
+    expect(append?.optionsByFolder?.Работа?.map((o) => o.value)).toEqual(["", "Работа/Планы.md"]);
   });
 });
