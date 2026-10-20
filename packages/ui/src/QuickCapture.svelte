@@ -10,15 +10,32 @@
     onsubmitNow?: (raw: string) => void | Promise<void>;
     /** When given, a switch offers "task to calendar": the text becomes a calendar event at the picked time. */
     oncalendar?: (raw: string, when: EventWhen) => void | Promise<void>;
+    /**
+     * When given, pictures pasted into the capture (a screenshot, an image from the clipboard) are saved by the
+     * host, which returns the text to insert (an embed such as `![[ArchiVarious/Вложения/…png]]`).
+     */
+    onimage?: (data: ArrayBuffer, mime: string) => Promise<string>;
     oncancel?: () => void;
     placeholder?: string;
     autofocus?: boolean;
   }
 
-  let { onsubmit, onsubmitNow, oncalendar, oncancel, placeholder = "Что запомнить?", autofocus = true }: Props =
-    $props();
+  let {
+    onsubmit,
+    onsubmitNow,
+    oncalendar,
+    onimage,
+    oncancel,
+    placeholder = "Текст заметки",
+    autofocus = true,
+  }: Props = $props();
 
-  let text = $state("");
+  /** The note is a title line and its text; `text` joins them the way a one-field capture would be written. */
+  let title = $state("");
+  let body = $state("");
+  const text = $derived(
+    title.trim() && body.trim() ? `${title.trim()}\n\n${body.trim()}` : title.trim() || body.trim(),
+  );
   let busy = $state(false);
   let mode = $state<CaptureMode>("note");
   let when = $state<EventWhen>(suggestWhen(""));
@@ -36,7 +53,8 @@
     try {
       if (mode === "calendar" && oncalendar) await oncalendar(text, when);
       else await (now && onsubmitNow ? onsubmitNow : onsubmit)(text);
-      text = "";
+      title = "";
+      body = "";
       touched = false;
     } catch (error) {
       // The host has told the user what went wrong; the text stays so nothing is lost.
@@ -44,6 +62,36 @@
     } finally {
       busy = false;
     }
+  }
+
+  let bodyInput = $state<HTMLTextAreaElement>();
+
+  /** Saves pasted pictures through the host and puts their embeds into the text at the cursor. */
+  async function onpaste(event: ClipboardEvent) {
+    const images = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    if (!onimage || images.length === 0) return;
+    event.preventDefault();
+    busy = true;
+    try {
+      const embeds: string[] = [];
+      for (const image of images) embeds.push(await onimage(await image.arrayBuffer(), image.type));
+      const at = bodyInput?.selectionStart ?? body.length;
+      const insert = `${at > 0 && !body.slice(0, at).endsWith("\n") ? "\n" : ""}${embeds.join("\n")}\n`;
+      body = body.slice(0, at) + insert + body.slice(at);
+    } catch (error) {
+      // The host has said what went wrong.
+      console.warn("ArchiVarious: image paste failed", error);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function ontitlekeydown(event: KeyboardEvent) {
+    // Enter in the title goes on to the note's text.
+    if (event.key === "Enter" && !(event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      bodyInput?.focus();
+    } else onkeydown(event);
   }
 
   function onkeydown(event: KeyboardEvent) {
@@ -61,13 +109,32 @@
     <ModeSwitch bind:mode />
   {/if}
   <!-- svelte-ignore a11y_autofocus -->
-  <textarea bind:value={text} {placeholder} {autofocus} {onkeydown} rows="4" disabled={busy}></textarea>
+  <input
+    class="archivarious-capture__title"
+    type="text"
+    bind:value={title}
+    placeholder={mode === "calendar" ? "Что сделать и когда?" : "Название"}
+    aria-label="Название"
+    {autofocus}
+    onkeydown={ontitlekeydown}
+    {onpaste}
+    disabled={busy}
+  />
+  <textarea
+    bind:this={bodyInput}
+    bind:value={body}
+    placeholder={mode === "calendar" ? "Подробности (необязательно)" : placeholder}
+    aria-label="Текст заметки"
+    {onkeydown}
+    {onpaste}
+    rows="6"
+    disabled={busy}
+  ></textarea>
   {#if mode === "calendar" && oncalendar}
     <EventFields bind:when ontouch={() => (touched = true)} />
   {/if}
-  {#if preview}
+  {#if preview && preview.tags.length > 0}
     <div class="archivarious-capture__preview">
-      <strong>{preview.title}</strong>
       {#each preview.tags as tag (tag)}
         <span class="archivarious-capture__tag">#{tag}</span>
       {/each}
@@ -75,7 +142,7 @@
   {/if}
   <div class="archivarious-capture__actions">
     <span class="archivarious-capture__hint">
-      Ctrl/⌘ + Enter{#if onsubmitNow && mode === "note"}&nbsp;· разложить сейчас: + Shift{/if}
+      Ctrl/⌘ + Enter — сохранить{#if onsubmitNow && mode === "note"}, + Shift — разложить сейчас{/if}{#if onimage && mode === "note"}. Картинку можно вставить через Ctrl+V{/if}
     </span>
     <div class="archivarious-capture__buttons">
       {#if mode === "calendar" && oncalendar}
@@ -99,6 +166,13 @@
   }
   .archivarious-capture > :global(.archivarious-mode) {
     align-self: flex-start;
+  }
+  .archivarious-capture__title {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 1.1em;
+    font-weight: 600;
   }
   textarea {
     width: 100%;

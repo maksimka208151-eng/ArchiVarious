@@ -14,17 +14,21 @@ import {
   snoozeSurvey,
   suggestPlacements,
   suggestRelatedNotes,
+  surveyPolicy,
   URI_ACTION,
 } from "@archivarious/core";
 import { obsidianLogoIcon } from "@archivarious/ui";
 import { addIcon, Notice, Plugin, requestUrl, TFile } from "obsidian";
+import { saveImage } from "./attachments";
 import { CaptureModal } from "./CaptureModal";
-import { placeNote, surveyBody } from "./filing";
+import { appendableNotes, placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
 import { dueReviews, listReviews, noteTags, type ReviewEntry } from "./notes";
+import { StatsModal } from "./StatsModal";
 import { SurveyModal } from "./SurveyModal";
 import { addSections, loadSections, openSectionList } from "./sections";
 import { type ArchiVariousSettings, ArchiVariousSettingTab, DEFAULT_SETTINGS } from "./settings";
+import { collectActivity } from "./stats";
 import { buildNoteProfiles, buildVaultIndex } from "./vaultIndex";
 
 const SURVEY_CHECK_INTERVAL_MS = 5 * 60_000;
@@ -39,6 +43,10 @@ interface SurveySubject {
   /** Folder the note is in now; offered first so "it's fine where it is" is one tap. */
   currentFolder?: string;
   defaults?: Record<string, string>;
+  /** A new capture can also be added to an existing note, not only filed as a note of its own. */
+  appendable?: boolean;
+  /** Open the note once it is filed, so the user can keep writing in it ("sort now" from the capture window). */
+  openAfter?: boolean;
   place(answers: SurveyAnswers, related: string[]): Promise<TFile>;
   skip(): Promise<void>;
 }
@@ -83,6 +91,11 @@ export default class ArchiVariousPlugin extends Plugin {
       },
     });
     this.addCommand({
+      id: "show-statistics",
+      name: "Show statistics",
+      callback: () => new StatsModal(this.app, collectActivity(this.app, this.settings.inboxFolder)).open(),
+    });
+    this.addCommand({
       id: "edit-sections",
       name: "Edit sections",
       callback: () => openSectionList(this.app),
@@ -125,6 +138,7 @@ export default class ArchiVariousPlugin extends Plugin {
       this.app,
       (raw, now) => this.capture(raw, "plugin", now),
       (raw, when) => this.addToCalendar(raw, when),
+      (data, mime) => saveImage(this.app, data, mime),
     ).open();
   }
 
@@ -160,7 +174,7 @@ export default class ArchiVariousPlugin extends Plugin {
     const file = await this.inbox.add(raw, source);
     const entry = sortNow ? await this.inbox.entry(file) : null;
     if (entry && !this.surveyOpen) {
-      void this.openSurvey(this.inboxSubject(entry));
+      void this.openSurvey({ ...this.inboxSubject(entry), openAfter: true });
     } else {
       new Notice("ArchiVarious: сохранено во входящие");
     }
@@ -213,6 +227,7 @@ export default class ArchiVariousPlugin extends Plugin {
       title: capture.title,
       body: capture.body,
       tags: capture.tags,
+      appendable: true,
       place: (answers, related) => this.inbox.file(entry, answers, related),
       skip: () => this.inbox.snooze(entry),
     };
@@ -246,10 +261,7 @@ export default class ArchiVariousPlugin extends Plugin {
         }),
       skip: () =>
         this.app.fileManager.processFrontMatter(review.file, (fm) => {
-          fm.review_at = snoozeSurvey(new Date(), {
-            delayMinutes: this.settings.surveyDelayMinutes,
-            snoozeMinutes: this.settings.snoozeMinutes,
-          }).toISOString();
+          fm.review_at = snoozeSurvey(new Date(), surveyPolicy(this.settings)).toISOString();
         }),
     };
   }
@@ -266,7 +278,8 @@ export default class ArchiVariousPlugin extends Plugin {
       candidates = candidates.filter((c, i) => i === 0 || c.folder !== current);
     }
     const sections = await loadSections(this.app).catch(() => []);
-    const questions = buildSurvey(candidates, this.settings.fallbackFolder, sections);
+    const appendable = subject.appendable ? appendableNotes(this.app, this.settings.inboxFolder) : [];
+    const questions = buildSurvey(candidates, this.settings.fallbackFolder, sections, appendable);
 
     new SurveyModal(
       this.app,
@@ -280,9 +293,17 @@ export default class ArchiVariousPlugin extends Plugin {
           (n) => n.path,
         );
         const placed = await subject.place(answers, related);
+        if (!answers.appendTo) {
+          // For the statistics: when the note was sorted, and (for new captures) whether the first suggestion was kept.
+          await this.app.fileManager.processFrontMatter(placed, (fm) => {
+            fm.filed = new Date().toISOString();
+            if (subject.appendable) fm.suggestion_hit = answers.folder === candidates[0]?.folder;
+          });
+        }
         this.settings.feedback = learnFromAnswer(this.settings.feedback, answers.folder, input);
         await this.saveSettings();
         new Notice(`ArchiVarious: → ${placed.path}`);
+        if (subject.openAfter) await this.app.workspace.getLeaf(false).openFile(placed);
         this.skipped.add(subject.key).add(placed.path);
         void this.runQueue();
       },

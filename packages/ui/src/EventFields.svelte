@@ -5,9 +5,11 @@
     when: EventWhen;
     /** Called when the user changes a field by hand, so the host stops re-suggesting from the text. */
     ontouch?: () => void;
+    /** A reminder is a moment: only date and time, no duration or all-day. */
+    reminder?: boolean;
   }
 
-  let { when = $bindable(), ontouch }: Props = $props();
+  let { when = $bindable(), ontouch, reminder = false }: Props = $props();
 
   const allDay = $derived(!when.time);
   const durationLabel = (m: number) => (m < 60 ? `${m} мин` : `${m / 60} ч`);
@@ -32,6 +34,7 @@
       value={when.time}
       onchange={(event) => event.currentTarget.value && set({ time: event.currentTarget.value })}
     />
+    {#if !reminder}
     <select
       aria-label="Длительность"
       value={String(when.minutes)}
@@ -41,7 +44,9 @@
         <option value={String(minutes)}>{durationLabel(minutes)}</option>
       {/each}
     </select>
+    {/if}
   {/if}
+  {#if !reminder}
   <label class="archivarious-event__allday">
     <input
       type="checkbox"
@@ -56,6 +61,7 @@
     />
     весь день
   </label>
+  {/if}
 </div>
 
 <style>
