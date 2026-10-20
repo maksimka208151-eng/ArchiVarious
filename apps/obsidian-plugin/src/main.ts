@@ -16,6 +16,7 @@ import { placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
 import { dueReviews, listReviews, noteTags, type ReviewEntry } from "./notes";
 import { SurveyModal } from "./SurveyModal";
+import { addSections, loadSections, openSectionList } from "./sections";
 import { type ArchiVariousSettings, ArchiVariousSettingTab, DEFAULT_SETTINGS } from "./settings";
 import { buildNoteProfiles, buildVaultIndex } from "./vaultIndex";
 
@@ -72,6 +73,11 @@ export default class ArchiVariousPlugin extends Plugin {
         return true;
       },
     });
+    this.addCommand({
+      id: "edit-sections",
+      name: "Edit sections",
+      callback: () => openSectionList(this.app),
+    });
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
@@ -113,7 +119,7 @@ export default class ArchiVariousPlugin extends Plugin {
     const file = await this.inbox.add(raw, source);
     const entry = sortNow ? await this.inbox.entry(file) : null;
     if (entry && !this.surveyOpen) {
-      this.openSurvey(this.inboxSubject(entry));
+      void this.openSurvey(this.inboxSubject(entry));
     } else {
       new Notice("ArchiVarious: сохранено во входящие");
     }
@@ -125,7 +131,7 @@ export default class ArchiVariousPlugin extends Plugin {
     const entry = await this.inbox.entry(file);
     if (entry) return this.openSurvey(this.inboxSubject(entry));
     const review = listReviews(this.app).find((r) => r.file.path === file.path);
-    this.openSurvey(review ? await this.reviewSubject(review) : await this.noteSubject(file));
+    await this.openSurvey(review ? await this.reviewSubject(review) : await this.noteSubject(file));
   }
 
   private async startPass(mode: QueueMode): Promise<void> {
@@ -143,7 +149,7 @@ export default class ArchiVariousPlugin extends Plugin {
       this.skipped.clear();
       return;
     }
-    this.openSurvey(next);
+    await this.openSurvey(next);
   }
 
   private async nextSubject(): Promise<SurveySubject | null> {
@@ -207,7 +213,9 @@ export default class ArchiVariousPlugin extends Plugin {
     };
   }
 
-  private openSurvey(subject: SurveySubject): void {
+  private async openSurvey(subject: SurveySubject): Promise<void> {
+    // Claimed before the first await, so a second survey can't open while this one loads the section list.
+    this.surveyOpen = true;
     const input = { title: subject.title, body: subject.body, tags: subject.tags };
     const index = buildVaultIndex(this.app, this.settings.inboxFolder);
     let candidates: PlacementCandidate[] = suggestPlacements(input, index, this.settings.feedback);
@@ -216,9 +224,9 @@ export default class ArchiVariousPlugin extends Plugin {
       candidates = [{ folder: current, score: Number.POSITIVE_INFINITY, reasons: ["сейчас здесь"] }, ...candidates];
       candidates = candidates.filter((c, i) => i === 0 || c.folder !== current);
     }
-    const questions = buildSurvey(candidates, this.settings.fallbackFolder);
+    const sections = await loadSections(this.app).catch(() => []);
+    const questions = buildSurvey(candidates, this.settings.fallbackFolder, sections);
 
-    this.surveyOpen = true;
     new SurveyModal(
       this.app,
       subject.title,
@@ -226,6 +234,7 @@ export default class ArchiVariousPlugin extends Plugin {
       questions,
       async (answers) => {
         this.surveyOpen = false;
+        await addSections(this.app, answers.createdSections ?? []);
         const related = suggestRelatedNotes(input, buildNoteProfiles(this.app, this.settings.inboxFolder)).map(
           (n) => n.path,
         );

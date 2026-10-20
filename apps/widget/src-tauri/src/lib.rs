@@ -34,7 +34,9 @@ pub fn run() {
             inbox::write_note_unique,
             inbox::ensure_note,
             inbox::scan_vault,
-            inbox::read_plugin_data
+            inbox::read_plugin_data,
+            inbox::read_sections,
+            inbox::write_sections
         ]);
 
     #[cfg(desktop)]

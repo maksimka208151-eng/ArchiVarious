@@ -1,11 +1,6 @@
-.archivarious-survey__question {
-  margin-bottom: 1rem;
-}
-
-.archivarious-survey__options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+/* The survey component carries its own layout; inside Obsidian it takes the theme's accent colour. */
+.archivarious-survey {
+  --archivarious-accent: var(--interactive-accent);
 }
 
 .archivarious-survey__options button.is-selected {

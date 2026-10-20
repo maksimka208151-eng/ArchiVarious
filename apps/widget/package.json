@@ -1,6 +1,6 @@
 {
   "name": "@archivarious/widget",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "ArchiVarious cross-platform quick-capture widget app (Tauri 2: Windows, macOS, Linux, Android, iOS).",
   "type": "module",

@@ -4,6 +4,7 @@ export * from "./format";
 export * from "./inbox";
 export * from "./placement";
 export * from "./schedule";
+export * from "./sections";
 export * from "./shared-settings";
 export * from "./survey";
 export * from "./vault";

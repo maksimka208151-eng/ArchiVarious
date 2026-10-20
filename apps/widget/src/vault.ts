@@ -1,4 +1,5 @@
 import {
+  addSection,
   buildCaptureUri,
   buildSurvey,
   type Capture,
@@ -12,11 +13,13 @@ import {
   newCapture,
   noteFileName,
   type PlacementFeedback,
+  parseSections,
   parseSharedSettings,
   type SharedSettings,
   type SurveyAnswers,
   serializeCapture,
   serializeFiledNote,
+  serializeSections,
   snapshotFromSnippets,
   suggestPlacements,
   suggestRelatedNotes,
@@ -90,12 +93,27 @@ export async function sendCapture(
 export interface VaultContext {
   shared: SharedSettings;
   snapshot: VaultSnapshot;
+  /** The user's own sections, offered in every survey (shared with the plugin through a note in the vault). */
+  sections: string[];
 }
 
 export async function loadVaultContext(vaultPath: string): Promise<VaultContext> {
   const shared = await readSharedSettings(vaultPath);
-  const snippets = await invoke<NoteSnippet[]>("scan_vault", { vaultPath, inboxFolder: shared.inboxFolder });
-  return { shared, snapshot: snapshotFromSnippets(snippets, shared.inboxFolder) };
+  const [snippets, sections] = await Promise.all([
+    invoke<NoteSnippet[]>("scan_vault", { vaultPath, inboxFolder: shared.inboxFolder }),
+    invoke<string | null>("read_sections", { vaultPath }),
+  ]);
+  return { shared, snapshot: snapshotFromSnippets(snippets, shared.inboxFolder), sections: parseSections(sections) };
+}
+
+/** Adds sections created in the survey to the shared list (re-read first, the plugin may have changed it) and creates their folders. */
+async function addSections(vaultPath: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+  const current = parseSections(await invoke<string | null>("read_sections", { vaultPath }));
+  const next = paths.reduce(addSection, current);
+  if (next !== current) {
+    await invoke("write_sections", { vaultPath, contents: serializeSections(next), folders: paths });
+  }
 }
 
 export function prepareSurvey(raw: string, context: VaultContext, settings: WidgetSettings) {
@@ -106,7 +124,7 @@ export function prepareSurvey(raw: string, context: VaultContext, settings: Widg
   const input = { title: capture.title, body: capture.body, tags: capture.tags };
   const feedback = mergeFeedback(context.shared.feedback, settings.feedback);
   const candidates = suggestPlacements(input, context.snapshot.index, feedback);
-  return { capture, input, questions: buildSurvey(candidates, context.shared.fallbackFolder) };
+  return { capture, input, questions: buildSurvey(candidates, context.shared.fallbackFolder, context.sections) };
 }
 
 /** `Learning\Deep/` → `Learning/Deep`; empty falls back to the plugin's fallback folder. */
@@ -128,6 +146,7 @@ export async function fileCapture(
   const { vaultPath } = settings;
   const folder = normalizeFolder(answers.folder, context.shared.fallbackFolder);
   const input = { title: capture.title, body: capture.body, tags: capture.tags };
+  await addSections(vaultPath, answers.createdSections ?? []);
 
   const links: NoteRef[] = [];
   if (context.shared.linkFolderHub) {
@@ -149,7 +168,7 @@ export async function fileCapture(
     folder,
     fileName: noteFileName(capture.title),
     contents: serializeFiledNote(capture, {
-      answers: { ...answers, folder },
+      answers: { folder, kind: answers.kind, importance: answers.importance },
       links,
       reviewDays: context.shared.reviewDays,
     }),
