@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.svg" width="72" alt="Логотип ArchiVarious"></p>
+<p align="center"><img src="docs/logo-loop.gif" width="160" alt="Логотип ArchiVarious"></p>
 
 # ArchiVarious
 
