@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" rx="224" fill="#5b3fd1"/>
-  <path d="M512 196 286 828h118l42-128h132l42 128h118L512 196Zm0 186 46 202H466l46-202Z" fill="#fff"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><title>ArchiVarious</title><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef1f7"/><stop offset="1" stop-color="#d9dde6"/></linearGradient></defs><rect x="32" y="32" width="960" height="960" rx="220" fill="url(#g)"/><g transform="translate(278 262) scale(1.1304)"><path fill="#113171" d="M0 16C0 6 7 0 16 0C23 0 29 5 30 11L64 191A162 156 0 0 0 386 193C388 184 394 179 401 179C408 179 414 185 414 192V413A30 30 0 0 1 384 443H30A30 30 0 0 1 0 413Z"/></g></svg>

@@ -1,3 +1,4 @@
+import type { EventWhen } from "@archivarious/core";
 import { QuickCapture } from "@archivarious/ui";
 import { type App, Modal } from "obsidian";
 import { mount, unmount } from "svelte";
@@ -10,6 +11,8 @@ export class CaptureModal extends Modal {
     app: App,
     /** `now` = the user chose "sort now": the survey opens right after saving. */
     private readonly onCapture: (raw: string, now: boolean) => Promise<void>,
+    /** "Task to calendar" mode. Throws on failure so the modal stays open with the text. */
+    private readonly onCalendar: (raw: string, when: EventWhen) => Promise<void>,
   ) {
     super(app);
   }
@@ -25,6 +28,11 @@ export class CaptureModal extends Modal {
         },
         onsubmitNow: async (raw: string) => {
           await this.onCapture(raw, true);
+          this.close();
+        },
+        oncalendar: async (raw: string, when: EventWhen) => {
+          // On failure this throws: QuickCapture keeps the text and the modal stays open.
+          await this.onCalendar(raw, when);
           this.close();
         },
         oncancel: () => this.close(),

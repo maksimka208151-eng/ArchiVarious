@@ -1,22 +1,31 @@
 import {
+  addSection,
+  buildCalendarEvent,
   buildCaptureUri,
   buildSurvey,
   type Capture,
   type CaptureSource,
+  calendarRequestBody,
   captureFileName,
+  type EventWhen,
   hubNote,
+  isAppsScriptUrl,
   learnFromAnswer,
+  lightFormat,
   mergeFeedback,
   type NoteRef,
   type NoteSnippet,
   newCapture,
   noteFileName,
   type PlacementFeedback,
+  parseCalendarResponse,
+  parseSections,
   parseSharedSettings,
   type SharedSettings,
   type SurveyAnswers,
   serializeCapture,
   serializeFiledNote,
+  serializeSections,
   snapshotFromSnippets,
   suggestPlacements,
   suggestRelatedNotes,
@@ -36,12 +45,22 @@ export interface WidgetSettings {
   placement: Placement;
   /** Folder preferences learned from this app's own sorting, added to the plugin's. */
   feedback: PlacementFeedback;
+  /** Google Calendar Apps Script URL and key. Empty = use the plugin's (if it is set up there). */
+  calendarUrl: string;
+  calendarKey: string;
 }
 
 const SETTINGS_KEY = "archivarious.settings";
 
 export function loadSettings(): WidgetSettings {
-  const defaults: WidgetSettings = { vaultPath: "", vaultName: "", placement: "desktop", feedback: {} };
+  const defaults: WidgetSettings = {
+    vaultPath: "",
+    vaultName: "",
+    placement: "desktop",
+    feedback: {},
+    calendarUrl: "",
+    calendarKey: "",
+  };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") };
   } catch {
@@ -90,12 +109,27 @@ export async function sendCapture(
 export interface VaultContext {
   shared: SharedSettings;
   snapshot: VaultSnapshot;
+  /** The user's own sections, offered in every survey (shared with the plugin through a note in the vault). */
+  sections: string[];
 }
 
 export async function loadVaultContext(vaultPath: string): Promise<VaultContext> {
   const shared = await readSharedSettings(vaultPath);
-  const snippets = await invoke<NoteSnippet[]>("scan_vault", { vaultPath, inboxFolder: shared.inboxFolder });
-  return { shared, snapshot: snapshotFromSnippets(snippets, shared.inboxFolder) };
+  const [snippets, sections] = await Promise.all([
+    invoke<NoteSnippet[]>("scan_vault", { vaultPath, inboxFolder: shared.inboxFolder }),
+    invoke<string | null>("read_sections", { vaultPath }),
+  ]);
+  return { shared, snapshot: snapshotFromSnippets(snippets, shared.inboxFolder), sections: parseSections(sections) };
+}
+
+/** Adds sections created in the survey to the shared list (re-read first, the plugin may have changed it) and creates their folders. */
+async function addSections(vaultPath: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+  const current = parseSections(await invoke<string | null>("read_sections", { vaultPath }));
+  const next = paths.reduce(addSection, current);
+  if (next !== current) {
+    await invoke("write_sections", { vaultPath, contents: serializeSections(next), folders: paths });
+  }
 }
 
 export function prepareSurvey(raw: string, context: VaultContext, settings: WidgetSettings) {
@@ -106,7 +140,7 @@ export function prepareSurvey(raw: string, context: VaultContext, settings: Widg
   const input = { title: capture.title, body: capture.body, tags: capture.tags };
   const feedback = mergeFeedback(context.shared.feedback, settings.feedback);
   const candidates = suggestPlacements(input, context.snapshot.index, feedback);
-  return { capture, input, questions: buildSurvey(candidates, context.shared.fallbackFolder) };
+  return { capture, input, questions: buildSurvey(candidates, context.shared.fallbackFolder, context.sections) };
 }
 
 /** `Learning\Deep/` → `Learning/Deep`; empty falls back to the plugin's fallback folder. */
@@ -128,6 +162,7 @@ export async function fileCapture(
   const { vaultPath } = settings;
   const folder = normalizeFolder(answers.folder, context.shared.fallbackFolder);
   const input = { title: capture.title, body: capture.body, tags: capture.tags };
+  await addSections(vaultPath, answers.createdSections ?? []);
 
   const links: NoteRef[] = [];
   if (context.shared.linkFolderHub) {
@@ -149,10 +184,35 @@ export async function fileCapture(
     folder,
     fileName: noteFileName(capture.title),
     contents: serializeFiledNote(capture, {
-      answers: { ...answers, folder },
+      answers: { folder, kind: answers.kind, importance: answers.importance },
       links,
       reviewDays: context.shared.reviewDays,
     }),
   });
   return { path: `${folder}/${name}`, feedback: learnFromAnswer(settings.feedback, folder, input) };
+}
+
+/** The calendar set-up in use: the widget's own, else the plugin's (read from the vault). */
+export async function calendarConfig(settings: WidgetSettings): Promise<{ url: string; key: string }> {
+  if (settings.calendarUrl && settings.calendarKey) return { url: settings.calendarUrl, key: settings.calendarKey };
+  if (!settings.vaultPath) return { url: settings.calendarUrl, key: settings.calendarKey };
+  const shared = await readSharedSettings(settings.vaultPath).catch(() => null);
+  return {
+    url: settings.calendarUrl || shared?.calendarUrl || "",
+    key: settings.calendarKey || shared?.calendarKey || "",
+  };
+}
+
+/** "Task to calendar": creates the event in the user's Google Calendar. Returns the event title; throws a readable error. */
+export async function sendToCalendar(raw: string, when: EventWhen, settings: WidgetSettings): Promise<string> {
+  const { url, key } = await calendarConfig(settings);
+  if (!isAppsScriptUrl(url) || !key) throw new Error("сначала настрой Google Календарь (⚙)");
+  const { title, body } = lightFormat(raw);
+  const reply = await invoke<string>("send_calendar_event", {
+    url,
+    body: calendarRequestBody(buildCalendarEvent(title, body, when), key),
+  });
+  const result = parseCalendarResponse(reply);
+  if (!result.ok) throw new Error(result.error);
+  return title;
 }

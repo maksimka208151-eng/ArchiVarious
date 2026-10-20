@@ -1,3 +1,4 @@
+mod calendar;
 mod inbox;
 
 #[cfg(desktop)]
@@ -34,7 +35,10 @@ pub fn run() {
             inbox::write_note_unique,
             inbox::ensure_note,
             inbox::scan_vault,
-            inbox::read_plugin_data
+            inbox::read_plugin_data,
+            inbox::read_sections,
+            inbox::write_sections,
+            calendar::send_calendar_event
         ]);
 
     #[cfg(desktop)]

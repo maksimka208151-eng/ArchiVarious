@@ -11,6 +11,10 @@ const MAX_SCANNED_NOTES: usize = 20_000;
 /// Upper bound for the plugin's `data.json` (it holds settings and learned folder preferences).
 const MAX_PLUGIN_DATA_BYTES: u64 = 2 * 1024 * 1024;
 const PLUGIN_DATA_PATH: &str = ".obsidian/plugins/archivarious/data.json";
+/// The user's section list, shared with the plugin. Same path as `SECTIONS_FILE` in `@archivarious/core`.
+const SECTIONS_PATH: &str = "ArchiVarious/Разделы.md";
+/// The section list is a short note; anything larger is not ours to rewrite.
+const MAX_SECTIONS_BYTES: u64 = 256 * 1024;
 
 /// Writes one capture file into `<vault>/<inbox_folder>/<file_name>`.
 /// The contents are produced by `@archivarious/core` (inbox protocol); Rust only guards the path.
@@ -104,6 +108,49 @@ pub fn read_plugin_data(vault_path: String) -> Result<Option<String>, String> {
         .read_to_string(&mut text)
         .map_err(|e| e.to_string())?;
     Ok(Some(text))
+}
+
+/// The section list note, if it exists.
+#[tauri::command]
+pub fn read_sections(vault_path: String) -> Result<Option<String>, String> {
+    let vault = Path::new(&vault_path);
+    check_vault(vault)?;
+    let file = match fs::File::open(vault.join(SECTIONS_PATH)) {
+        Ok(file) => file,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut text = String::new();
+    file.take(MAX_SECTIONS_BYTES)
+        .read_to_string(&mut text)
+        .map_err(|e| e.to_string())?;
+    Ok(Some(text))
+}
+
+/// Rewrites the section list note and creates the folders of the given sections. This is the only command
+/// that overwrites a file, and only this one fixed file; section folders go through the usual path guard.
+#[tauri::command]
+pub fn write_sections(
+    vault_path: String,
+    contents: String,
+    folders: Vec<String>,
+) -> Result<(), String> {
+    let vault = Path::new(&vault_path);
+    let mut dirs = Vec::new();
+    for folder in &folders {
+        // Validated as `<folder>/x.md`, then only the folder is created.
+        let probe = resolve_target(vault, folder, "x.md")?;
+        dirs.extend(probe.parent().map(Path::to_path_buf));
+    }
+    let target = vault.join(SECTIONS_PATH);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&target, contents).map_err(|e| e.to_string())?;
+    for dir in dirs {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn scan_dir(dir: &Path, relative: &str, inbox: &str, notes: &mut Vec<NoteSnippet>) {
@@ -315,6 +362,26 @@ mod tests {
         let notes = scan_vault(s(&vault), "Inbox".into()).unwrap();
         assert!(notes[0].text.starts_with('я'));
         assert!(notes[0].text.len() <= SNIPPET_BYTES as usize + 3);
+        fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
+    fn writes_the_section_list_and_section_folders() {
+        let vault = temp_vault("sections");
+        assert_eq!(read_sections(s(&vault)).unwrap(), None);
+        write_sections(
+            s(&vault),
+            "- Учеба\n  - Математика\n".into(),
+            vec!["Учеба/Математика".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            read_sections(s(&vault)).unwrap().as_deref(),
+            Some("- Учеба\n  - Математика\n")
+        );
+        assert!(vault.join("Учеба/Математика").is_dir());
+        assert!(write_sections(s(&vault), String::new(), vec!["../x".into()]).is_err());
+        assert!(write_sections(s(&vault), String::new(), vec![".obsidian".into()]).is_err());
         fs::remove_dir_all(&vault).unwrap();
     }
 

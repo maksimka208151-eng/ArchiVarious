@@ -6,6 +6,7 @@ export interface SurveyQuestion<T extends string = string> {
   id: string;
   prompt: string;
   options: { value: T; label: string }[];
+  /** Folder question only: the user may create a new section or subsection right in the survey. */
   allowCustom?: boolean;
 }
 
@@ -14,19 +15,31 @@ export interface SurveyAnswers {
   kind: CaptureKind;
   /** 1 (low) – 3 (high). Drives how prominently the note is linked and resurfaced. */
   importance: 1 | 2 | 3;
+  /** Sections the user created in this survey; the host adds them to the shared section list. */
+  createdSections?: string[];
 }
 
 /**
  * The survey is intentionally short (three taps): where, what kind, how important.
  * Placement candidates come from the algorithm; the user confirms or corrects them,
  * and that correction is what the algorithm learns from.
+ *
+ * Folder options are full paths: the algorithm's suggestions first (the best one is preselected), then the
+ * user's own sections and subsections (see `sections.ts`), which are offered in every survey. The survey UI
+ * shows them as a section row and a subsection row.
  */
-export function buildSurvey(candidates: PlacementCandidate[], fallbackFolder: string): SurveyQuestion[] {
-  const folders = candidates.length > 0 ? candidates.map((c) => c.folder) : [fallbackFolder];
+export function buildSurvey(
+  candidates: PlacementCandidate[],
+  fallbackFolder: string,
+  sections: string[] = [],
+): SurveyQuestion[] {
+  const suggested = candidates.map((c) => c.folder);
+  const folders = [...new Set([...suggested, ...sections])];
+  if (folders.length === 0) folders.push(fallbackFolder);
   return [
     {
       id: "folder",
-      prompt: "Куда это относится?",
+      prompt: "Раздел",
       options: folders.map((f) => ({ value: f, label: f })),
       allowCustom: true,
     },

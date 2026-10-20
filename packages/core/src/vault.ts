@@ -1,5 +1,6 @@
 import type { FolderProfile, NoteProfile, VaultIndex } from "./placement";
 import { tokenize } from "./placement";
+import { SECTIONS_FILE } from "./sections";
 
 /** The beginning of a note's text plus its vault-relative path (forward slashes). Hosts without a metadata cache read these from disk. */
 export interface NoteSnippet {
@@ -20,7 +21,7 @@ const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---(?:\n|$)/;
  * Builds the placement index and per-note profiles from raw note snippets. This is the metadata-cache-free
  * twin of the plugin's `buildVaultIndex`/`buildNoteProfiles`: same inputs for the algorithm, so the widget
  * app suggests the same folders without Obsidian running. Notes in the inbox folder and at the vault root
- * don't vote for a folder.
+ * don't vote for a folder, and the section list note is not a note at all.
  */
 export function snapshotFromSnippets(snippets: NoteSnippet[], inboxFolder: string): VaultSnapshot {
   const inbox = inboxFolder.replace(/^\/+|\/+$/g, "");
@@ -28,7 +29,7 @@ export function snapshotFromSnippets(snippets: NoteSnippet[], inboxFolder: strin
   const notes: NoteProfile[] = [];
 
   for (const { path, text } of snippets) {
-    if (inbox && path.startsWith(`${inbox}/`)) continue;
+    if ((inbox && path.startsWith(`${inbox}/`)) || path === SECTIONS_FILE) continue;
     const text0 = text.replace(/\r\n?/g, "\n");
     const slash = path.lastIndexOf("/");
     const folder = slash < 0 ? "" : path.slice(0, slash);

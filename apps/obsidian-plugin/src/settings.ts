@@ -1,10 +1,12 @@
 import {
+  appsScriptSource,
   DEFAULT_INBOX_FOLDER,
   DEFAULT_REVIEW_DAYS,
   DEFAULT_SURVEY_POLICY,
+  isAppsScriptUrl,
   type PlacementFeedback,
 } from "@archivarious/core";
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ArchiVariousPlugin from "./main";
 
 export interface ArchiVariousSettings {
@@ -19,6 +21,9 @@ export interface ArchiVariousSettings {
   reviewDays: number;
   /** Learned per-folder term weights. Lives in data.json so it syncs with the vault. */
   feedback: PlacementFeedback;
+  /** Google Calendar Apps Script web app (see core `calendar.ts`); the widget app reads these too. */
+  calendarUrl: string;
+  calendarKey: string;
 }
 
 export const DEFAULT_SETTINGS: ArchiVariousSettings = {
@@ -29,6 +34,8 @@ export const DEFAULT_SETTINGS: ArchiVariousSettings = {
   linkFolderHub: true,
   reviewDays: DEFAULT_REVIEW_DAYS,
   feedback: {},
+  calendarUrl: "",
+  calendarKey: "",
 };
 
 export class ArchiVariousSettingTab extends PluginSettingTab {
@@ -86,6 +93,41 @@ export class ArchiVariousSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }
         }),
+      );
+
+    new Setting(containerEl).setName("Google Календарь").setHeading();
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "Режим «Задача в календарь» создаёт событие в твоём Google Календаре через маленький скрипт в твоём же аккаунте Google. Шаг 1: скопируй скрипт и следуй инструкции в его первых строках. Шаг 2: вставь адрес веб-приложения ниже.",
+    });
+    new Setting(containerEl)
+      .setName("Скрипт для Google")
+      .setDesc("Копирует код скрипта с твоим секретным ключом. Ключ создаётся один раз и хранится в настройках.")
+      .addButton((button) =>
+        button.setButtonText("Скопировать скрипт").onClick(async () => {
+          if (!this.plugin.settings.calendarKey) {
+            this.plugin.settings.calendarKey = crypto.randomUUID();
+            await this.plugin.saveSettings();
+          }
+          await navigator.clipboard.writeText(appsScriptSource(this.plugin.settings.calendarKey));
+          new Notice("Скрипт скопирован. Вставь его на script.google.com");
+        }),
+      );
+    new Setting(containerEl)
+      .setName("Адрес веб-приложения")
+      .setDesc("Вида https://script.google.com/macros/s/…/exec")
+      .addText((text) =>
+        text
+          .setPlaceholder("https://script.google.com/macros/s/…/exec")
+          .setValue(this.plugin.settings.calendarUrl)
+          .onChange(async (value) => {
+            const url = value.trim();
+            text.inputEl.toggleClass("archivarious-invalid", url !== "" && !isAppsScriptUrl(url));
+            if (url === "" || isAppsScriptUrl(url)) {
+              this.plugin.settings.calendarUrl = url;
+              await this.plugin.saveSettings();
+            }
+          }),
       );
 
     new Setting(containerEl)

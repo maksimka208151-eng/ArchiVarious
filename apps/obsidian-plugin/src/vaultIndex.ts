@@ -1,16 +1,17 @@
-import { type FolderProfile, type NoteProfile, tokenize, type VaultIndex } from "@archivarious/core";
+import { type FolderProfile, type NoteProfile, SECTIONS_FILE, tokenize, type VaultIndex } from "@archivarious/core";
 import { type App, getAllTags } from "obsidian";
 
 /**
  * Builds the algorithm's view of the vault from Obsidian's metadata cache (already in memory,
- * so this needs no file reads). Inbox notes are excluded so captures don't vote for the inbox.
+ * so this needs no file reads). Inbox notes are excluded so captures don't vote for the inbox, and the
+ * section list note is not a note to learn from.
  */
 export function buildVaultIndex(app: App, inboxFolder: string): VaultIndex {
   const folders = new Map<string, FolderProfile>();
 
   for (const file of app.vault.getMarkdownFiles()) {
     const folderPath = file.parent?.path ?? "/";
-    if (folderPath === "/" || folderPath.startsWith(inboxFolder)) continue;
+    if (folderPath === "/" || folderPath.startsWith(inboxFolder) || file.path === SECTIONS_FILE) continue;
 
     let profile = folders.get(folderPath);
     if (!profile) {
@@ -37,7 +38,7 @@ export function buildVaultIndex(app: App, inboxFolder: string): VaultIndex {
 export function buildNoteProfiles(app: App, inboxFolder: string): NoteProfile[] {
   return app.vault
     .getMarkdownFiles()
-    .filter((file) => !file.path.startsWith(`${inboxFolder}/`))
+    .filter((file) => !file.path.startsWith(`${inboxFolder}/`) && file.path !== SECTIONS_FILE)
     .map((file) => {
       const cache = app.metadataCache.getFileCache(file);
       const tags = cache ? (getAllTags(cache) ?? []).map((t) => t.replace(/^#/, "").toLowerCase()) : [];

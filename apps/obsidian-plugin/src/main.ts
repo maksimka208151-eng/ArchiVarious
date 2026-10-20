@@ -1,25 +1,34 @@
 import {
+  buildCalendarEvent,
   buildSurvey,
   type CaptureSource,
+  calendarRequestBody,
+  type EventWhen,
+  isAppsScriptUrl,
   learnFromAnswer,
+  lightFormat,
   nextReviewDays,
   type PlacementCandidate,
+  parseCalendarResponse,
   type SurveyAnswers,
   snoozeSurvey,
   suggestPlacements,
   suggestRelatedNotes,
   URI_ACTION,
 } from "@archivarious/core";
-import { Notice, Plugin, TFile } from "obsidian";
+import { obsidianLogoIcon } from "@archivarious/ui";
+import { addIcon, Notice, Plugin, requestUrl, TFile } from "obsidian";
 import { CaptureModal } from "./CaptureModal";
 import { placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
 import { dueReviews, listReviews, noteTags, type ReviewEntry } from "./notes";
 import { SurveyModal } from "./SurveyModal";
+import { addSections, loadSections, openSectionList } from "./sections";
 import { type ArchiVariousSettings, ArchiVariousSettingTab, DEFAULT_SETTINGS } from "./settings";
 import { buildNoteProfiles, buildVaultIndex } from "./vaultIndex";
 
 const SURVEY_CHECK_INTERVAL_MS = 5 * 60_000;
+const ICON = "archivarious-logo";
 
 /** Anything the survey can be asked about: a new capture, an existing note, or a note due for review. */
 interface SurveySubject {
@@ -49,7 +58,8 @@ export default class ArchiVariousPlugin extends Plugin {
     await this.loadSettings();
     this.inbox = new Inbox(this.app, () => this.settings);
 
-    this.addRibbonIcon("brain", "ArchiVarious: quick capture", () => this.openCapture());
+    addIcon(ICON, obsidianLogoIcon());
+    this.addRibbonIcon(ICON, "ArchiVarious: quick capture", () => this.openCapture());
     this.addCommand({ id: "quick-capture", name: "Quick capture", callback: () => this.openCapture() });
     this.addCommand({ id: "run-due-surveys", name: "Sort due captures now", callback: () => this.runQueue(true) });
     this.addCommand({
@@ -72,13 +82,18 @@ export default class ArchiVariousPlugin extends Plugin {
         return true;
       },
     });
+    this.addCommand({
+      id: "edit-sections",
+      name: "Edit sections",
+      callback: () => openSectionList(this.app),
+    });
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
         menu.addItem((item) =>
           item
             .setTitle("ArchiVarious: разложить")
-            .setIcon("brain")
+            .setIcon(ICON)
             .onClick(() => this.sortNote(file)),
         );
       }),
@@ -106,14 +121,46 @@ export default class ArchiVariousPlugin extends Plugin {
   }
 
   private openCapture(): void {
-    new CaptureModal(this.app, (raw, now) => this.capture(raw, "plugin", now)).open();
+    new CaptureModal(
+      this.app,
+      (raw, now) => this.capture(raw, "plugin", now),
+      (raw, when) => this.addToCalendar(raw, when),
+    ).open();
+  }
+
+  /** "Task to calendar": creates the event through the user's Apps Script. Throws (and keeps the text) on failure. */
+  private async addToCalendar(raw: string, when: EventWhen): Promise<void> {
+    const { calendarUrl, calendarKey } = this.settings;
+    if (!isAppsScriptUrl(calendarUrl) || !calendarKey) {
+      new Notice("ArchiVarious: сначала настрой Google Календарь в настройках плагина");
+      throw new Error("calendar is not set up");
+    }
+    const { title, body } = lightFormat(raw);
+    let result: ReturnType<typeof parseCalendarResponse>;
+    try {
+      const response = await requestUrl({
+        url: calendarUrl,
+        method: "POST",
+        contentType: "text/plain;charset=utf-8",
+        body: calendarRequestBody(buildCalendarEvent(title, body, when), calendarKey),
+        throw: false,
+      });
+      result = parseCalendarResponse(response.text);
+    } catch (error) {
+      result = { ok: false, error: `нет связи с Google (${String(error)})` };
+    }
+    if (!result.ok) {
+      new Notice(`ArchiVarious: не удалось добавить в календарь: ${result.error}`, 8000);
+      throw new Error(result.error);
+    }
+    new Notice(`ArchiVarious: «${title}» добавлено в Google Календарь`);
   }
 
   private async capture(raw: string, source: CaptureSource, sortNow = false): Promise<void> {
     const file = await this.inbox.add(raw, source);
     const entry = sortNow ? await this.inbox.entry(file) : null;
     if (entry && !this.surveyOpen) {
-      this.openSurvey(this.inboxSubject(entry));
+      void this.openSurvey(this.inboxSubject(entry));
     } else {
       new Notice("ArchiVarious: сохранено во входящие");
     }
@@ -125,7 +172,7 @@ export default class ArchiVariousPlugin extends Plugin {
     const entry = await this.inbox.entry(file);
     if (entry) return this.openSurvey(this.inboxSubject(entry));
     const review = listReviews(this.app).find((r) => r.file.path === file.path);
-    this.openSurvey(review ? await this.reviewSubject(review) : await this.noteSubject(file));
+    await this.openSurvey(review ? await this.reviewSubject(review) : await this.noteSubject(file));
   }
 
   private async startPass(mode: QueueMode): Promise<void> {
@@ -143,7 +190,7 @@ export default class ArchiVariousPlugin extends Plugin {
       this.skipped.clear();
       return;
     }
-    this.openSurvey(next);
+    await this.openSurvey(next);
   }
 
   private async nextSubject(): Promise<SurveySubject | null> {
@@ -207,7 +254,9 @@ export default class ArchiVariousPlugin extends Plugin {
     };
   }
 
-  private openSurvey(subject: SurveySubject): void {
+  private async openSurvey(subject: SurveySubject): Promise<void> {
+    // Claimed before the first await, so a second survey can't open while this one loads the section list.
+    this.surveyOpen = true;
     const input = { title: subject.title, body: subject.body, tags: subject.tags };
     const index = buildVaultIndex(this.app, this.settings.inboxFolder);
     let candidates: PlacementCandidate[] = suggestPlacements(input, index, this.settings.feedback);
@@ -216,9 +265,9 @@ export default class ArchiVariousPlugin extends Plugin {
       candidates = [{ folder: current, score: Number.POSITIVE_INFINITY, reasons: ["сейчас здесь"] }, ...candidates];
       candidates = candidates.filter((c, i) => i === 0 || c.folder !== current);
     }
-    const questions = buildSurvey(candidates, this.settings.fallbackFolder);
+    const sections = await loadSections(this.app).catch(() => []);
+    const questions = buildSurvey(candidates, this.settings.fallbackFolder, sections);
 
-    this.surveyOpen = true;
     new SurveyModal(
       this.app,
       subject.title,
@@ -226,6 +275,7 @@ export default class ArchiVariousPlugin extends Plugin {
       questions,
       async (answers) => {
         this.surveyOpen = false;
+        await addSections(this.app, answers.createdSections ?? []);
         const related = suggestRelatedNotes(input, buildNoteProfiles(this.app, this.settings.inboxFolder)).map(
           (n) => n.path,
         );
