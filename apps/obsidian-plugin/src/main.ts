@@ -1,16 +1,22 @@
 import {
+  buildCalendarEvent,
   buildSurvey,
   type CaptureSource,
+  calendarRequestBody,
+  type EventWhen,
+  isAppsScriptUrl,
   learnFromAnswer,
+  lightFormat,
   nextReviewDays,
   type PlacementCandidate,
+  parseCalendarResponse,
   type SurveyAnswers,
   snoozeSurvey,
   suggestPlacements,
   suggestRelatedNotes,
   URI_ACTION,
 } from "@archivarious/core";
-import { Notice, Plugin, TFile } from "obsidian";
+import { Notice, Plugin, requestUrl, TFile } from "obsidian";
 import { CaptureModal } from "./CaptureModal";
 import { placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
@@ -112,7 +118,39 @@ export default class ArchiVariousPlugin extends Plugin {
   }
 
   private openCapture(): void {
-    new CaptureModal(this.app, (raw, now) => this.capture(raw, "plugin", now)).open();
+    new CaptureModal(
+      this.app,
+      (raw, now) => this.capture(raw, "plugin", now),
+      (raw, when) => this.addToCalendar(raw, when),
+    ).open();
+  }
+
+  /** "Task to calendar": creates the event through the user's Apps Script. Throws (and keeps the text) on failure. */
+  private async addToCalendar(raw: string, when: EventWhen): Promise<void> {
+    const { calendarUrl, calendarKey } = this.settings;
+    if (!isAppsScriptUrl(calendarUrl) || !calendarKey) {
+      new Notice("ArchiVarious: сначала настрой Google Календарь в настройках плагина");
+      throw new Error("calendar is not set up");
+    }
+    const { title, body } = lightFormat(raw);
+    let result: ReturnType<typeof parseCalendarResponse>;
+    try {
+      const response = await requestUrl({
+        url: calendarUrl,
+        method: "POST",
+        contentType: "text/plain;charset=utf-8",
+        body: calendarRequestBody(buildCalendarEvent(title, body, when), calendarKey),
+        throw: false,
+      });
+      result = parseCalendarResponse(response.text);
+    } catch (error) {
+      result = { ok: false, error: `нет связи с Google (${String(error)})` };
+    }
+    if (!result.ok) {
+      new Notice(`ArchiVarious: не удалось добавить в календарь: ${result.error}`, 8000);
+      throw new Error(result.error);
+    }
+    new Notice(`ArchiVarious: «${title}» добавлено в Google Календарь`);
   }
 
   private async capture(raw: string, source: CaptureSource, sortNow = false): Promise<void> {

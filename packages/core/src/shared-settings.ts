@@ -14,6 +14,9 @@ export interface SharedSettings {
   linkFolderHub: boolean;
   reviewDays: number;
   feedback: PlacementFeedback;
+  /** Google Calendar: the user's Apps Script web app URL and its key (see `calendar.ts`). Empty = not set up. */
+  calendarUrl: string;
+  calendarKey: string;
 }
 
 export const DEFAULT_SHARED_SETTINGS: SharedSettings = {
@@ -24,6 +27,8 @@ export const DEFAULT_SHARED_SETTINGS: SharedSettings = {
   linkFolderHub: true,
   reviewDays: DEFAULT_REVIEW_DAYS,
   feedback: {},
+  calendarUrl: "",
+  calendarKey: "",
 };
 
 /** Tolerant parse: missing file, broken JSON or wrong types fall back field by field to the defaults. */
@@ -38,7 +43,7 @@ export function parseSharedSettings(json: string | null | undefined): SharedSett
   if (typeof data !== "object" || data === null) return result;
   const raw = data as Record<string, unknown>;
 
-  const text = (key: "inboxFolder" | "fallbackFolder") => {
+  const text = (key: "inboxFolder" | "fallbackFolder" | "calendarUrl" | "calendarKey") => {
     const value = raw[key];
     if (typeof value === "string" && value.trim()) result[key] = value.trim();
   };
@@ -48,6 +53,8 @@ export function parseSharedSettings(json: string | null | undefined): SharedSett
   };
   text("inboxFolder");
   text("fallbackFolder");
+  text("calendarUrl");
+  text("calendarKey");
   count("surveyDelayMinutes");
   count("snoozeMinutes");
   count("reviewDays");

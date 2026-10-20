@@ -7,3 +7,7 @@
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+.setting-item input.archivarious-invalid {
+  border-color: var(--text-error);
+}

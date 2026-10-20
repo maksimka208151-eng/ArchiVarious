@@ -1,18 +1,24 @@
 import {
   addSection,
+  buildCalendarEvent,
   buildCaptureUri,
   buildSurvey,
   type Capture,
   type CaptureSource,
+  calendarRequestBody,
   captureFileName,
+  type EventWhen,
   hubNote,
+  isAppsScriptUrl,
   learnFromAnswer,
+  lightFormat,
   mergeFeedback,
   type NoteRef,
   type NoteSnippet,
   newCapture,
   noteFileName,
   type PlacementFeedback,
+  parseCalendarResponse,
   parseSections,
   parseSharedSettings,
   type SharedSettings,
@@ -39,12 +45,22 @@ export interface WidgetSettings {
   placement: Placement;
   /** Folder preferences learned from this app's own sorting, added to the plugin's. */
   feedback: PlacementFeedback;
+  /** Google Calendar Apps Script URL and key. Empty = use the plugin's (if it is set up there). */
+  calendarUrl: string;
+  calendarKey: string;
 }
 
 const SETTINGS_KEY = "archivarious.settings";
 
 export function loadSettings(): WidgetSettings {
-  const defaults: WidgetSettings = { vaultPath: "", vaultName: "", placement: "desktop", feedback: {} };
+  const defaults: WidgetSettings = {
+    vaultPath: "",
+    vaultName: "",
+    placement: "desktop",
+    feedback: {},
+    calendarUrl: "",
+    calendarKey: "",
+  };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") };
   } catch {
@@ -174,4 +190,29 @@ export async function fileCapture(
     }),
   });
   return { path: `${folder}/${name}`, feedback: learnFromAnswer(settings.feedback, folder, input) };
+}
+
+/** The calendar set-up in use: the widget's own, else the plugin's (read from the vault). */
+export async function calendarConfig(settings: WidgetSettings): Promise<{ url: string; key: string }> {
+  if (settings.calendarUrl && settings.calendarKey) return { url: settings.calendarUrl, key: settings.calendarKey };
+  if (!settings.vaultPath) return { url: settings.calendarUrl, key: settings.calendarKey };
+  const shared = await readSharedSettings(settings.vaultPath).catch(() => null);
+  return {
+    url: settings.calendarUrl || shared?.calendarUrl || "",
+    key: settings.calendarKey || shared?.calendarKey || "",
+  };
+}
+
+/** "Task to calendar": creates the event in the user's Google Calendar. Returns the event title; throws a readable error. */
+export async function sendToCalendar(raw: string, when: EventWhen, settings: WidgetSettings): Promise<string> {
+  const { url, key } = await calendarConfig(settings);
+  if (!isAppsScriptUrl(url) || !key) throw new Error("сначала настрой Google Календарь (⚙)");
+  const { title, body } = lightFormat(raw);
+  const reply = await invoke<string>("send_calendar_event", {
+    url,
+    body: calendarRequestBody(buildCalendarEvent(title, body, when), key),
+  });
+  const result = parseCalendarResponse(reply);
+  if (!result.ok) throw new Error(result.error);
+  return title;
 }

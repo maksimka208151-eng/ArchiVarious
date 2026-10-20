@@ -1,13 +1,21 @@
 <script lang="ts">
-  
-  import type { Capture, SurveyAnswers, SurveyQuestion } from "@archivarious/core";
-import { Survey } from "@archivarious/ui";
+  import {
+    appsScriptSource,
+    type Capture,
+    type EventWhen,
+    isAppsScriptUrl,
+    type SurveyAnswers,
+    type SurveyQuestion,
+    suggestWhen,
+  } from "@archivarious/core";
+  import { type CaptureMode, EventFields, ModeSwitch, Survey } from "@archivarious/ui";
   import { emit, listen } from "@tauri-apps/api/event";
   import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
   import { open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
   import {
+    calendarConfig,
     fileCapture,
     loadSettings,
     loadVaultContext,
@@ -15,6 +23,7 @@ import { Survey } from "@archivarious/ui";
     readSharedSettings,
     saveSettings,
     sendCapture,
+    sendToCalendar,
     type VaultContext,
   } from "./vault";
 
@@ -27,7 +36,24 @@ import { Survey } from "@archivarious/ui";
   let status = $state({ text: "", error: false });
   let survey = $state<{ capture: Capture; questions: SurveyQuestion[] } | null>(null);
   let autostart = $state(false);
-  let draft = $state({ vaultPath: settings.vaultPath, placement: settings.placement });
+  const settingsDraft = () => ({
+    vaultPath: settings.vaultPath,
+    placement: settings.placement,
+    calendarUrl: settings.calendarUrl,
+    calendarKey: settings.calendarKey,
+  });
+  let draft = $state(settingsDraft());
+  /** The plugin's calendar URL, shown as a hint when the widget has none of its own. */
+  let pluginCalendarUrl = $state("");
+
+  /** "Note" saves to the vault; "calendar" turns the text into a Google Calendar event at the picked time. */
+  let mode = $state<CaptureMode>("note");
+  let when = $state<EventWhen>(suggestWhen(""));
+  /** Until the user picks a date or time by hand, they follow the text ("завтра в 15:00"). */
+  let touched = false;
+  $effect(() => {
+    if (mode === "calendar" && !touched) when = suggestWhen(text);
+  });
 
   let root: HTMLElement;
   let input = $state<HTMLTextAreaElement>();
@@ -85,7 +111,26 @@ import { Survey } from "@archivarious/ui";
     }
   }
 
+  async function toCalendar() {
+    const raw = text.trim();
+    if (!raw || busy) return;
+    busy = true;
+    flash("Отправляю в календарь…");
+    try {
+      const title = await sendToCalendar(raw, when, settings);
+      text = "";
+      touched = false;
+      flash(`В календаре: ${title}`);
+    } catch (error) {
+      flash(`Календарь: ${error instanceof Error ? error.message : String(error)}`, true);
+    } finally {
+      busy = false;
+      queueMicrotask(resize);
+    }
+  }
+
   async function save() {
+    if (mode === "calendar") return toCalendar();
     const raw = text.trim();
     if (!raw || busy) return;
     busy = true;
@@ -147,7 +192,7 @@ import { Survey } from "@archivarious/ui";
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
-      if (event.ctrlKey || event.metaKey) void sortNow();
+      if ((event.ctrlKey || event.metaKey) && mode === "note") void sortNow();
       else void save();
     } else if (event.key === "Escape") {
       dismiss();
@@ -173,14 +218,45 @@ import { Survey } from "@archivarious/ui";
       flash("Папка хранилища не найдена", true);
       return;
     }
+    const calendarUrl = draft.calendarUrl.trim();
+    if (calendarUrl && !isAppsScriptUrl(calendarUrl)) {
+      flash("Адрес календаря должен быть вида https://script.google.com/macros/s/…/exec", true);
+      return;
+    }
     settings.vaultPath = vaultPath;
     settings.placement = draft.placement;
+    settings.calendarUrl = calendarUrl;
+    settings.calendarKey = draft.calendarKey;
     saveSettings($state.snapshot(settings));
     contextPromise = null;
     status = { text: "", error: false };
     view = "bar";
     await place(true);
     input?.focus();
+  }
+
+  function openSettings() {
+    draft = settingsDraft();
+    view = "settings";
+    void calendarConfig({ ...settings, calendarUrl: "", calendarKey: "" })
+      .then((plugin) => (pluginCalendarUrl = plugin.url))
+      .catch(() => {});
+  }
+
+  /** Copies the Apps Script with the key in use (the widget's, else the plugin's, else a new one). */
+  async function copyScript() {
+    let key = draft.calendarKey;
+    if (!key) {
+      const plugin = await calendarConfig({ ...settings, calendarUrl: "", calendarKey: "" }).catch(() => null);
+      key = plugin?.key || crypto.randomUUID();
+      draft.calendarKey = key;
+    }
+    try {
+      await navigator.clipboard.writeText(appsScriptSource(key));
+      flash("Скрипт скопирован: вставь его на script.google.com");
+    } catch (error) {
+      flash(`Не удалось скопировать: ${String(error)}`, true);
+    }
   }
 
   async function toggleAutostart(enabled: boolean) {
@@ -210,8 +286,7 @@ import { Survey } from "@archivarious/ui";
       contextPromise = null;
       void place(true);
       if (event.payload) {
-        draft = { vaultPath: settings.vaultPath, placement: settings.placement };
-        view = "settings";
+        openSettings();
       } else {
         input?.focus();
       }
@@ -238,16 +313,17 @@ import { Survey } from "@archivarious/ui";
           if (settings.vaultPath) void vaultContext();
         }}
         rows="1"
-        placeholder="Что запомнить?"
+        placeholder={mode === "calendar" ? "Что сделать и когда?" : "Что запомнить?"}
         spellcheck="false"
         disabled={busy}
       ></textarea>
-      {#if settings.vaultPath}
+      <ModeSwitch bind:mode compact />
+      {#if settings.vaultPath && mode === "note"}
         <button type="button" class="icon" title="Разложить сейчас (Ctrl+Enter)" disabled={busy || !text.trim()} onclick={sortNow}>
           ⚡
         </button>
       {/if}
-      <button type="button" class="icon" title="Настройки" onclick={() => { draft = { vaultPath: settings.vaultPath, placement: settings.placement }; view = "settings"; }}>
+      <button type="button" class="icon" title="Настройки" onclick={openSettings}>
         ⚙
       </button>
     {:else}
@@ -257,7 +333,14 @@ import { Survey } from "@archivarious/ui";
     {/if}
   </div>
 
-  {#if view === "survey" && survey}
+  {#if view === "bar" && mode === "calendar"}
+    <section class="panel calendar">
+      <EventFields bind:when ontouch={() => (touched = true)} />
+      <div class="actions">
+        <button type="button" class="primary" disabled={busy || !text.trim()} onclick={toCalendar}>В календарь</button>
+      </div>
+    </section>
+  {:else if view === "survey" && survey}
     <section class="panel">
       <blockquote>{survey.capture.body}</blockquote>
       <Survey questions={survey.questions} onanswer={answer} onskip={later} />
@@ -286,6 +369,18 @@ import { Survey } from "@archivarious/ui";
         <input type="checkbox" checked={autostart} onchange={(event) => toggleAutostart(event.currentTarget.checked)} />
         Запускать вместе с Windows
       </label>
+      <fieldset>
+        <legend>Google Календарь (режим 📅)</legend>
+        <span class="row">
+          <input
+            bind:value={draft.calendarUrl}
+            placeholder={pluginCalendarUrl ? "берётся из настроек плагина" : "https://script.google.com/macros/s/…/exec"}
+            aria-label="Адрес веб-приложения Google"
+          />
+          <button type="button" onclick={copyScript}>Скопировать скрипт</button>
+        </span>
+        <span class="hint">Скопируй скрипт, вставь его на script.google.com и опубликуй как веб-приложение (инструкция в начале скрипта), затем вставь сюда его адрес.</span>
+      </fieldset>
       <p class="hint">Вызвать виджет: Ctrl+Shift+Space или иконка в трее. Он остаётся поверх окон, пока не нажмёшь Esc или снова Ctrl+Shift+Space.</p>
       <div class="actions">
         {#if settings.vaultPath}
@@ -371,6 +466,12 @@ import { Survey } from "@archivarious/ui";
   .icon:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+  .panel.calendar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
   }
   .panel {
     display: flex;

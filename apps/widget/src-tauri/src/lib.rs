@@ -1,3 +1,4 @@
+mod calendar;
 mod inbox;
 
 #[cfg(desktop)]
@@ -36,7 +37,8 @@ pub fn run() {
             inbox::scan_vault,
             inbox::read_plugin_data,
             inbox::read_sections,
-            inbox::write_sections
+            inbox::write_sections,
+            calendar::send_calendar_event
         ]);
 
     #[cfg(desktop)]
