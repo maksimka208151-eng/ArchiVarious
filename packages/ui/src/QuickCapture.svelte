@@ -113,6 +113,11 @@
     font-size: 0.85em;
     opacity: 0.8;
   }
+  .archivarious-capture__buttons :global(button.mod-cta) {
+    background: var(--archivarious-accent, #113171);
+    border-color: var(--archivarious-accent, #113171);
+    color: var(--archivarious-on-accent, #fff);
+  }
   .archivarious-capture__tag {
     opacity: 0.7;
   }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { type SurveyAnswers, type SurveyQuestion, sectionPath } from "@archivarious/core";
   import { tick } from "svelte";
+  import Icon from "./Icon.svelte";
 
   interface Props {
     questions: SurveyQuestion[];
@@ -139,7 +140,9 @@
           >
         {/each}
         {#if folderQuestion.allowCustom && creating !== "section"}
-          <button type="button" class="archivarious-survey__add" onclick={() => startCreating("section")}>+ раздел</button>
+          <button type="button" class="archivarious-survey__add" onclick={() => startCreating("section")}
+            ><Icon name="plus" size={14} />раздел</button
+          >
         {/if}
       </div>
       {#if section}
@@ -150,7 +153,9 @@
             <button type="button" class:is-selected={sub === name} onclick={() => (sub = name)}>{name}</button>
           {/each}
           {#if folderQuestion.allowCustom && creating !== "sub"}
-            <button type="button" class="archivarious-survey__add" onclick={() => startCreating("sub")}>+ подраздел</button>
+            <button type="button" class="archivarious-survey__add" onclick={() => startCreating("sub")}
+              ><Icon name="plus" size={14} />подраздел</button
+            >
           {/if}
         </div>
       {/if}
@@ -189,36 +194,65 @@
 </div>
 
 <style>
+  /* Colours come from the host through --archivarious-* variables; the defaults are the brand navy. */
   .archivarious-survey {
+    --av-accent: var(--archivarious-accent, #113171);
+    --av-on-accent: var(--archivarious-on-accent, #fff);
+    --av-chip: var(--archivarious-chip, rgba(17, 49, 113, 0.06));
+    --av-line: var(--archivarious-line, rgba(17, 49, 113, 0.18));
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.75rem;
   }
   .archivarious-survey__prompt {
-    font-size: 0.8em;
-    opacity: 0.7;
-    margin-bottom: 0.25rem;
+    font-size: 0.72em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin-bottom: 0.35rem;
   }
   .archivarious-survey__options {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
   }
+  .archivarious-survey__options button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid var(--av-line);
+    border-radius: 999px;
+    background: var(--av-chip);
+    color: inherit;
+    box-shadow: none;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition:
+      background 0.15s,
+      border-color 0.15s,
+      color 0.15s;
+  }
+  .archivarious-survey__options button:hover {
+    border-color: var(--av-accent);
+  }
   .archivarious-survey__options button.is-selected,
   .archivarious-survey__actions button.is-primary {
-    background: var(--archivarious-accent, #5b3fd1);
-    border-color: var(--archivarious-accent, #5b3fd1);
-    color: #fff;
+    background: var(--av-accent);
+    border-color: var(--av-accent);
+    color: var(--av-on-accent);
   }
   .archivarious-survey__prompt--sub {
-    margin-top: 0.4rem;
+    margin-top: 0.5rem;
   }
-  .archivarious-survey__add {
-    opacity: 0.75;
+  .archivarious-survey__options button.archivarious-survey__add {
+    background: transparent;
     border-style: dashed;
+    opacity: 0.8;
   }
   .archivarious-survey__custom {
-    margin-top: 0.35rem;
+    margin-top: 0.45rem;
     width: 100%;
     box-sizing: border-box;
   }
@@ -226,5 +260,10 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.4rem;
+  }
+  .archivarious-survey__actions button {
+    border-radius: 999px;
+    padding: 0.35rem 1rem;
+    cursor: pointer;
   }
 </style>

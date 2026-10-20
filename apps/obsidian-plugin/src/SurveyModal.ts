@@ -23,7 +23,7 @@ export class SurveyModal extends Modal {
 
   override onOpen(): void {
     this.setTitle(this.title);
-    this.contentEl.createEl("blockquote", { text: this.body });
+    this.contentEl.createEl("blockquote", { cls: "archivarious-quote", text: this.body });
     this.component = mount(Survey, {
       target: this.contentEl.createDiv(),
       props: {

@@ -1,11 +1,34 @@
-/* The survey component carries its own layout; inside Obsidian it takes the theme's accent colour. */
-.archivarious-survey {
-  --archivarious-accent: var(--interactive-accent);
+/*
+ * ArchiVarious palette, taken from the logo: navy ink in light themes, its light counterpart in dark ones.
+ * The shared Svelte components read the --archivarious-* variables.
+ */
+body {
+  --archivarious-accent: #113171;
+  --archivarious-on-accent: #ffffff;
+  --archivarious-chip: rgba(17, 49, 113, 0.06);
+  --archivarious-line: rgba(17, 49, 113, 0.2);
 }
 
-.archivarious-survey__options button.is-selected {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
+body.theme-dark {
+  --archivarious-accent: #8aa6e6;
+  --archivarious-on-accent: #0a2152;
+  --archivarious-chip: rgba(138, 166, 230, 0.08);
+  --archivarious-line: rgba(138, 166, 230, 0.25);
+}
+
+.modal .archivarious-capture button.mod-cta {
+  background-color: var(--archivarious-accent);
+  color: var(--archivarious-on-accent);
+}
+
+.archivarious-quote {
+  border-left: 3px solid var(--archivarious-accent);
+  margin: 0 0 1rem;
+  padding: 0.2rem 0.8rem;
+}
+
+.side-dock-ribbon-action[aria-label^="ArchiVarious"] svg {
+  color: var(--archivarious-accent);
 }
 
 .setting-item input.archivarious-invalid {

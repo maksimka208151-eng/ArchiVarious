@@ -47,7 +47,10 @@
 
 <style>
   main {
+    min-height: 100vh;
+    box-sizing: border-box;
     padding: 0.75rem;
+    background: linear-gradient(160deg, var(--glass-hi), var(--glass-lo));
   }
   form {
     display: flex;

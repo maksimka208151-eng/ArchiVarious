@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Icon from "./Icon.svelte";
+
   export type CaptureMode = "note" | "calendar";
 
   interface Props {
@@ -18,14 +20,18 @@
     role="radio"
     aria-checked={mode === "note"}
     title="Заметка в хранилище"
-    onclick={() => (mode = "note")}>{compact ? "📝" : "Заметка"}</button
+    aria-label="Заметка"
+    onclick={() => (mode = "note")}
+    ><Icon name="note" size={compact ? 15 : 16} />{#if !compact}<span>Заметка</span>{/if}</button
   >
   <button
     type="button"
     role="radio"
     aria-checked={mode === "calendar"}
     title="Задача в Google Календарь"
-    onclick={() => (mode = "calendar")}>{compact ? "📅" : "Задача в календарь"}</button
+    aria-label="Задача в календарь"
+    onclick={() => (mode = "calendar")}
+    ><Icon name="calendar" size={compact ? 15 : 16} />{#if !compact}<span>Задача в календарь</span>{/if}</button
   >
 </div>
 
@@ -36,10 +42,15 @@
     grid-template-columns: 1fr 1fr;
     padding: 2px;
     border-radius: 999px;
-    background: rgba(128, 128, 128, 0.18);
+    background: var(--archivarious-chip, rgba(17, 49, 113, 0.08));
+    box-shadow: inset 0 0 0 1px var(--archivarious-line, rgba(17, 49, 113, 0.14));
     flex-shrink: 0;
   }
   .archivarious-mode button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
     position: relative;
     z-index: 1;
     border: none;
@@ -53,11 +64,10 @@
     white-space: nowrap;
   }
   .archivarious-mode.is-compact button {
-    padding: 2px 6px;
-    font-size: 0.9em;
+    padding: 4px 8px;
   }
   .archivarious-mode button[aria-checked="true"] {
-    color: #fff;
+    color: var(--archivarious-on-accent, #fff);
   }
   .archivarious-mode__thumb {
     position: absolute;
@@ -66,8 +76,9 @@
     left: 2px;
     width: calc(50% - 2px);
     border-radius: 999px;
-    background: var(--archivarious-accent, #5b3fd1);
-    transition: transform 0.18s ease;
+    background: var(--archivarious-accent, #113171);
+    box-shadow: 0 1px 3px rgba(10, 33, 82, 0.35);
+    transition: transform 0.22s cubic-bezier(0.3, 1.3, 0.5, 1);
   }
   .archivarious-mode__thumb.is-right {
     transform: translateX(100%);

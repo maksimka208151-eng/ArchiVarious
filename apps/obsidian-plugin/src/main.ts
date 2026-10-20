@@ -16,7 +16,8 @@ import {
   suggestRelatedNotes,
   URI_ACTION,
 } from "@archivarious/core";
-import { Notice, Plugin, requestUrl, TFile } from "obsidian";
+import { obsidianLogoIcon } from "@archivarious/ui";
+import { addIcon, Notice, Plugin, requestUrl, TFile } from "obsidian";
 import { CaptureModal } from "./CaptureModal";
 import { placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
@@ -27,6 +28,7 @@ import { type ArchiVariousSettings, ArchiVariousSettingTab, DEFAULT_SETTINGS } f
 import { buildNoteProfiles, buildVaultIndex } from "./vaultIndex";
 
 const SURVEY_CHECK_INTERVAL_MS = 5 * 60_000;
+const ICON = "archivarious-logo";
 
 /** Anything the survey can be asked about: a new capture, an existing note, or a note due for review. */
 interface SurveySubject {
@@ -56,7 +58,8 @@ export default class ArchiVariousPlugin extends Plugin {
     await this.loadSettings();
     this.inbox = new Inbox(this.app, () => this.settings);
 
-    this.addRibbonIcon("brain", "ArchiVarious: quick capture", () => this.openCapture());
+    addIcon(ICON, obsidianLogoIcon());
+    this.addRibbonIcon(ICON, "ArchiVarious: quick capture", () => this.openCapture());
     this.addCommand({ id: "quick-capture", name: "Quick capture", callback: () => this.openCapture() });
     this.addCommand({ id: "run-due-surveys", name: "Sort due captures now", callback: () => this.runQueue(true) });
     this.addCommand({
@@ -90,7 +93,7 @@ export default class ArchiVariousPlugin extends Plugin {
         menu.addItem((item) =>
           item
             .setTitle("ArchiVarious: разложить")
-            .setIcon("brain")
+            .setIcon(ICON)
             .onClick(() => this.sortNote(file)),
         );
       }),

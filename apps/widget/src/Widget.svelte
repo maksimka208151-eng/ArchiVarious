@@ -8,7 +8,7 @@
     type SurveyQuestion,
     suggestWhen,
   } from "@archivarious/core";
-  import { type CaptureMode, EventFields, ModeSwitch, Survey } from "@archivarious/ui";
+  import { type CaptureMode, EventFields, Icon, ModeSwitch, Survey } from "@archivarious/ui";
   import { emit, listen } from "@tauri-apps/api/event";
   import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
@@ -302,7 +302,8 @@
 
 <main bind:this={root}>
   <div class="header" data-tauri-drag-region>
-    <span class="grip" data-tauri-drag-region aria-hidden="true">⋮⋮</span>
+    <!-- The logo is the drag handle; the SVG ignores pointer events so the drag region gets the press. -->
+    <span class="mark" data-tauri-drag-region title="Перетащить"><Icon name="logo" size={18} /></span>
     {#if view === "bar"}
       <textarea
         bind:this={input}
@@ -319,13 +320,18 @@
       ></textarea>
       <ModeSwitch bind:mode compact />
       {#if settings.vaultPath && mode === "note"}
-        <button type="button" class="icon" title="Разложить сейчас (Ctrl+Enter)" disabled={busy || !text.trim()} onclick={sortNow}>
-          ⚡
-        </button>
+        <button
+          type="button"
+          class="icon"
+          title="Разложить сейчас (Ctrl+Enter)"
+          aria-label="Разложить сейчас"
+          disabled={busy || !text.trim()}
+          onclick={sortNow}><Icon name="bolt" /></button
+        >
       {/if}
-      <button type="button" class="icon" title="Настройки" onclick={openSettings}>
-        ⚙
-      </button>
+      <button type="button" class="icon" title="Настройки" aria-label="Настройки" onclick={openSettings}
+        ><Icon name="settings" /></button
+      >
     {:else}
       <strong class="title" data-tauri-drag-region>
         {view === "survey" ? (survey?.capture.title ?? "") : "Настройки"}
@@ -337,7 +343,9 @@
     <section class="panel calendar">
       <EventFields bind:when ontouch={() => (touched = true)} />
       <div class="actions">
-        <button type="button" class="primary" disabled={busy || !text.trim()} onclick={toCalendar}>В календарь</button>
+        <button type="button" class="primary" disabled={busy || !text.trim()} onclick={toCalendar}
+          ><Icon name="calendar" size={16} />В календарь</button
+        >
       </div>
     </section>
   {:else if view === "survey" && survey}
@@ -370,7 +378,7 @@
         Запускать вместе с Windows
       </label>
       <fieldset>
-        <legend>Google Календарь (режим 📅)</legend>
+        <legend>Google Календарь</legend>
         <span class="row">
           <input
             bind:value={draft.calendarUrl}
@@ -397,22 +405,37 @@
 </main>
 
 <style>
+  /*
+   * Liquid glass: a translucent tinted pane with a bright top edge, a soft inner rim and a specular sheen.
+   * On Windows the window itself has the acrylic effect (tauri.conf.json), which blurs the desktop behind
+   * the pane; elsewhere the pane is simply more opaque (see App.svelte).
+   */
   main {
-    --card: rgba(255, 255, 255, 0.94);
-    --line: rgba(128, 128, 128, 0.35);
-    --accent: #5b3fd1;
+    position: relative;
     box-sizing: border-box;
     padding: 6px 8px;
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    background: var(--card);
+    border-radius: var(--radius);
+    background: linear-gradient(160deg, var(--glass-hi) 0%, var(--glass) 55%, var(--glass-lo) 100%);
+    box-shadow:
+      inset 0 1px 0 var(--rim-top),
+      inset 0 -1px 0 var(--rim-bottom),
+      inset 0 0 0 1px var(--rim);
     overflow: hidden;
     user-select: none;
+    color: var(--text);
   }
-  @media (prefers-color-scheme: dark) {
-    main {
-      --card: rgba(36, 36, 38, 0.94);
-    }
+  main::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+      radial-gradient(120% 60% at 15% -20%, var(--sheen) 0%, transparent 60%),
+      radial-gradient(80% 50% at 110% 120%, var(--sheen-lo) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  main > :global(*) {
+    position: relative;
   }
   .header {
     display: flex;
@@ -420,12 +443,14 @@
     gap: 6px;
     min-height: 40px;
   }
-  .grip {
+  .mark {
     align-self: center;
-    padding: 0 2px;
-    opacity: 0.4;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    color: var(--accent);
     cursor: grab;
-    letter-spacing: -3px;
   }
   .title {
     align-self: center;
@@ -433,6 +458,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 600;
   }
   textarea {
     flex: 1;
@@ -449,35 +475,46 @@
     padding: 9px 4px;
     user-select: text;
   }
+  textarea::placeholder {
+    color: var(--text-soft);
+  }
+  .header :global(.archivarious-mode) {
+    align-self: center;
+  }
   .icon {
     align-self: center;
+    display: grid;
+    place-items: center;
     width: 30px;
     height: 30px;
+    padding: 0;
     border: none;
-    border-radius: 8px;
+    border-radius: 999px;
     background: transparent;
-    color: inherit;
-    font-size: 16px;
+    color: var(--text-soft);
     cursor: pointer;
   }
   .icon:hover:not(:disabled) {
-    background: rgba(128, 128, 128, 0.18);
+    background: var(--chip);
+    color: var(--accent);
   }
   .icon:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 6px 4px 8px;
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
   }
   .panel.calendar {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-  }
-  .panel {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 4px 4px 8px;
   }
   blockquote {
     margin: 0;
@@ -498,6 +535,7 @@
   label.inline {
     flex-direction: row;
     align-items: center;
+    gap: 6px;
   }
   fieldset {
     margin: 0;
@@ -511,6 +549,11 @@
   legend {
     padding: 0;
     margin-bottom: 4px;
+    font-size: 0.85em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-soft);
   }
   .row {
     display: flex;
@@ -523,7 +566,7 @@
   .hint {
     margin: 0;
     font-size: 0.78em;
-    opacity: 0.65;
+    color: var(--text-soft);
   }
   .actions {
     display: flex;
@@ -531,17 +574,22 @@
     gap: 6px;
   }
   .primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
+  }
+  .primary:hover:not(:disabled) {
+    background: var(--accent-hover);
   }
   .status {
     padding: 0 8px 6px;
     font-size: 0.8em;
-    opacity: 0.75;
+    color: var(--text-soft);
   }
   .status.error {
-    color: #d13438;
-    opacity: 1;
+    color: var(--danger);
   }
 </style>
