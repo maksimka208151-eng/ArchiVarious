@@ -22,6 +22,17 @@ jobs:
       - name: Tag matches manifest version
         run: test "$(node -p "require('./manifest.json').version")" = "${GITHUB_REF_NAME}"
       - run: pnpm build:plugin
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/installer/go.mod
+          cache: false
+      - name: Build Windows installer
+        run: pnpm build:installer
+      - name: Zip for manual install
+        run: |
+          mkdir -p release/archivarious
+          cp apps/obsidian-plugin/{main.js,manifest.json,styles.css} release/archivarious/
+          (cd release && zip -r archivarious-plugin.zip archivarious)
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
@@ -29,3 +40,5 @@ jobs:
             apps/obsidian-plugin/main.js
             apps/obsidian-plugin/manifest.json
             apps/obsidian-plugin/styles.css
+            apps/installer/dist/ArchiVarious-installer.exe
+            release/archivarious-plugin.zip

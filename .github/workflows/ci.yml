@@ -30,6 +30,11 @@ jobs:
           diff versions.json apps/obsidian-plugin/versions.json
       - run: pnpm build:plugin
       - run: pnpm --filter @archivarious/widget build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/installer/go.mod
+          cache: false
+      - run: pnpm build:installer
       - uses: actions/upload-artifact@v4
         with:
           name: obsidian-plugin
@@ -37,6 +42,24 @@ jobs:
             apps/obsidian-plugin/main.js
             apps/obsidian-plugin/manifest.json
             apps/obsidian-plugin/styles.css
+            apps/installer/dist/ArchiVarious-installer.exe
+
+  installer:
+    name: Windows installer (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/installer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/installer/go.mod
+          cache: false
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: GOOS=windows go vet ./...
+      - run: go test ./...
 
   rust:
     name: Widget app (Rust)

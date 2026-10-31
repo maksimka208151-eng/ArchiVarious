@@ -1,0 +1,5 @@
+/payload/*
+!/payload/README.md
+/rsrc_windows_*.syso
+/dist/
+/winres/icon.ico

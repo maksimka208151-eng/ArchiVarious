@@ -14,6 +14,7 @@
     "dev:widget": "pnpm --filter @archivarious/widget tauri dev",
     "build": "pnpm -r build",
     "build:plugin": "pnpm --filter @archivarious/obsidian-plugin build",
+    "build:installer": "node apps/installer/build.mjs",
     "build:widget": "pnpm --filter @archivarious/widget tauri build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
