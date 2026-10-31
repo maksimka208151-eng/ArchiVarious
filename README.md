@@ -21,12 +21,20 @@
 
 Готовые файлы лежат в [Releases](https://github.com/maksimka208151-eng/ArchiVarious/releases): плагин публикуется под тегом вида `0.1.0`, виджет под тегом вида `widget-v0.4.0`. Берите самую свежую версию.
 
-### Плагин Obsidian (компьютер)
+### Плагин Obsidian на Windows: установщик
 
-1. Скачайте из релиза плагина три файла: `main.js`, `manifest.json`, `styles.css`. Архив с исходниками (`Source code`, после распаковки папка `ArchiVarious-main`) для установки не нужен.
+1. Скачайте из релиза плагина файл `ArchiVarious-installer.exe` и запустите его.
+2. Если Windows покажет «Система Windows защитила ваш компьютер», нажмите **«Подробнее» → «Выполнить в любом случае»** (установщик пока не подписан).
+3. В окне выберите хранилище Obsidian (они находятся сами, свою папку можно указать кнопкой «Другая папка…») и нажмите **«Установить»**. Если Obsidian открыт, установщик попросит его закрыть.
+4. Установщик скопирует плагин в `<хранилище>/.obsidian/plugins/archivarious` и включит его. Заметки и настройки плагина не меняются, так что так же можно обновлять плагин.
+5. Откройте хранилище. Если Obsidian спросит, доверяете ли вы автору хранилища, выберите вариант с включением плагинов.
+
+### Плагин Obsidian вручную (macOS, Linux или без установщика)
+
+1. Скачайте из релиза плагина `archivarious-plugin.zip` (или три файла: `main.js`, `manifest.json`, `styles.css`). Архив с исходниками (`Source code`, после распаковки папка `ArchiVarious-main`) для установки не нужен.
 2. В Obsidian откройте **Настройки → Сторонние плагины** и при необходимости выключите **Безопасный режим**.
 3. Нажмите на значок папки рядом с «Установленные плагины», откроется `<хранилище>/.obsidian/plugins`.
-4. Создайте там папку `archivarious` и положите в неё три файла. Должно получиться `<хранилище>/.obsidian/plugins/archivarious/main.js`.
+4. Положите туда папку `archivarious` из архива (или создайте её и положите в неё три файла). Должно получиться `<хранилище>/.obsidian/plugins/archivarious/main.js`.
 5. Обновите список плагинов и включите **ArchiVarious**.
 
 ### Плагин Obsidian (телефон)
@@ -127,6 +135,7 @@ packages/core            логика без зависимостей: форм�
 packages/ui              общий Svelte-компонент быстрого ввода
 apps/obsidian-plugin     плагин Obsidian (esbuild)
 apps/widget              виджет-приложение (Vite + Svelte + Tauri 2 / Rust)
+apps/installer           установщик плагина для Windows (Go, один exe без зависимостей)
 docs/                    архитектура и решения
 ```
 
@@ -145,6 +154,10 @@ pnpm build:plugin
 OBSIDIAN_VAULT=~/Obsidian/Dev pnpm dev:plugin
 # затем в Obsidian: Настройки → Сторонние плагины → включить ArchiVarious
 
+# Установщик плагина для Windows (нужен Go, см. apps/installer/go.mod; собирается на любой ОС):
+# apps/installer/dist/ArchiVarious-installer.exe со встроенным плагином из build:plugin
+pnpm build:installer
+
 # Виджет-приложение (десктоп)
 pnpm dev:widget
 
@@ -155,5 +168,5 @@ pnpm --filter @archivarious/widget tauri android dev
 
 ### Релизы
 
-- **Плагин.** `cd apps/obsidian-plugin && pnpm version X.Y.Z --no-git-tag-version` обновит `manifest.json` и `versions.json` (здесь и в корне). После коммита поставьте тег `X.Y.Z`: CI соберёт черновик релиза с тремя файлами плагина. Черновик нужно опубликовать на GitHub, иначе его видят только владельцы репозитория.
+- **Плагин.** `cd apps/obsidian-plugin && pnpm version X.Y.Z --no-git-tag-version` обновит `manifest.json` и `versions.json` (здесь и в корне). После коммита поставьте тег `X.Y.Z`: CI соберёт черновик релиза с тремя файлами плагина, архивом `archivarious-plugin.zip` и установщиком `ArchiVarious-installer.exe`. Черновик нужно опубликовать на GitHub, иначе его видят только владельцы репозитория.
 - **Виджет-приложение.** Тег `widget-vX.Y.Z` запускает сборку установщиков для macOS, Windows и Linux (тоже черновиком). Версию виджета меняйте в `apps/widget/package.json`, `src-tauri/Cargo.toml` и `src-tauri/tauri.conf.json`.
