@@ -3,6 +3,7 @@ export * from "./capture";
 export * from "./filed";
 export * from "./format";
 export * from "./inbox";
+export * from "./knowledge";
 export * from "./placement";
 export * from "./schedule";
 export * from "./sections";

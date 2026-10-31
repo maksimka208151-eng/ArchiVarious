@@ -9,6 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "etl": "pnpm --filter @archivarious/etl start",
     "dev:plugin": "pnpm --filter @archivarious/obsidian-plugin dev",
     "dev:widget": "pnpm --filter @archivarious/widget tauri dev",
     "build": "pnpm -r build",
