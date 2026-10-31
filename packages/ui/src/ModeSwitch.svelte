@@ -1,45 +1,59 @@
+<script lang="ts" module>
+  export type CaptureMode = "note" | "calendar" | "reminder";
+</script>
+
 <script lang="ts">
   import Icon from "./Icon.svelte";
 
-  export type CaptureMode = "note" | "calendar";
-
   interface Props {
     mode: CaptureMode;
+    /** Which positions the switch has; the widget app adds "reminder". */
+    modes?: CaptureMode[];
     /** Short labels (icons) for tight places such as the desktop widget bar. */
     compact?: boolean;
   }
 
-  let { mode = $bindable(), compact = false }: Props = $props();
+  let { mode = $bindable(), modes = ["note", "calendar"], compact = false }: Props = $props();
+
+  const LABELS = {
+    note: { icon: "note", label: "Заметка", title: "Заметка в хранилище" },
+    calendar: { icon: "calendar", label: "Задача в календарь", title: "Задача в Google Календарь" },
+    reminder: { icon: "bell", label: "Напоминание", title: "Напоминание уведомлением" },
+  } as const;
+  const index = $derived(Math.max(0, modes.indexOf(mode)));
 </script>
 
-<!-- A two-position slider: "note" (saved to the vault) or "calendar" (becomes a Google Calendar event). -->
-<div class="archivarious-mode" class:is-compact={compact} role="radiogroup" aria-label="Куда сохранить">
-  <span class="archivarious-mode__thumb" class:is-right={mode === "calendar"} aria-hidden="true"></span>
-  <button
-    type="button"
-    role="radio"
-    aria-checked={mode === "note"}
-    title="Заметка в хранилище"
-    aria-label="Заметка"
-    onclick={() => (mode = "note")}
-    ><Icon name="note" size={compact ? 15 : 16} />{#if !compact}<span>Заметка</span>{/if}</button
-  >
-  <button
-    type="button"
-    role="radio"
-    aria-checked={mode === "calendar"}
-    title="Задача в Google Календарь"
-    aria-label="Задача в календарь"
-    onclick={() => (mode = "calendar")}
-    ><Icon name="calendar" size={compact ? 15 : 16} />{#if !compact}<span>Задача в календарь</span>{/if}</button
-  >
+<!-- A slider between "note" (saved to the vault), "calendar" (a Google Calendar event) and, in the widget, "reminder". -->
+<div
+  class="archivarious-mode"
+  class:is-compact={compact}
+  role="radiogroup"
+  aria-label="Куда сохранить"
+  style:grid-template-columns={`repeat(${modes.length}, 1fr)`}
+>
+  <span
+    class="archivarious-mode__thumb"
+    aria-hidden="true"
+    style:width={`calc(${100 / modes.length}% - ${4 / modes.length}px)`}
+    style:transform={`translateX(${index * 100}%)`}
+  ></span>
+  {#each modes as m (m)}
+    <button
+      type="button"
+      role="radio"
+      aria-checked={mode === m}
+      title={LABELS[m].title}
+      aria-label={LABELS[m].label}
+      onclick={() => (mode = m)}
+      ><Icon name={LABELS[m].icon} size={compact ? 15 : 16} />{#if !compact}<span>{LABELS[m].label}</span>{/if}</button
+    >
+  {/each}
 </div>
 
 <style>
   .archivarious-mode {
     position: relative;
     display: inline-grid;
-    grid-template-columns: 1fr 1fr;
     padding: 2px;
     border-radius: 999px;
     background: var(--archivarious-chip, rgba(17, 49, 113, 0.08));
@@ -74,13 +88,9 @@
     top: 2px;
     bottom: 2px;
     left: 2px;
-    width: calc(50% - 2px);
     border-radius: 999px;
     background: var(--archivarious-accent, #113171);
     box-shadow: 0 1px 3px rgba(10, 33, 82, 0.35);
     transition: transform 0.22s cubic-bezier(0.3, 1.3, 0.5, 1);
-  }
-  .archivarious-mode__thumb.is-right {
-    transform: translateX(100%);
   }
 </style>

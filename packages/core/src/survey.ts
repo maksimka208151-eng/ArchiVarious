@@ -8,6 +8,15 @@ export interface SurveyQuestion<T extends string = string> {
   options: { value: T; label: string }[];
   /** Folder question only: the user may create a new section or subsection right in the survey. */
   allowCustom?: boolean;
+  /** Options that depend on the chosen folder (the notes to append to); `options` is the fallback. */
+  optionsByFolder?: Record<string, { value: string; label: string }[]>;
+}
+
+/** An existing note a new capture can be added to. `folder` is the note's own folder. */
+export interface AppendableNote {
+  folder: string;
+  path: string;
+  title: string;
 }
 
 export interface SurveyAnswers {
@@ -17,6 +26,8 @@ export interface SurveyAnswers {
   importance: 1 | 2 | 3;
   /** Sections the user created in this survey; the host adds them to the shared section list. */
   createdSections?: string[];
+  /** Vault path of an existing note the capture is added to, instead of a new note. */
+  appendTo?: string;
 }
 
 /**
@@ -27,15 +38,22 @@ export interface SurveyAnswers {
  * Folder options are full paths: the algorithm's suggestions first (the best one is preselected), then the
  * user's own sections and subsections (see `sections.ts`), which are offered in every survey. The survey UI
  * shows them as a section row and a subsection row.
+ *
+ * `appendable` notes add an "append" question: "Новая заметка", or one of the notes in the chosen folder.
  */
 export function buildSurvey(
   candidates: PlacementCandidate[],
   fallbackFolder: string,
   sections: string[] = [],
+  appendable: AppendableNote[] = [],
 ): SurveyQuestion[] {
   const suggested = candidates.map((c) => c.folder);
   const folders = [...new Set([...suggested, ...sections])];
   if (folders.length === 0) folders.push(fallbackFolder);
+  const appendOptions = (folder: string) => [
+    { value: "", label: "Новая заметка" },
+    ...appendable.filter((n) => n.folder === folder).map((n) => ({ value: n.path, label: n.title })),
+  ];
   return [
     {
       id: "folder",
@@ -43,6 +61,16 @@ export function buildSurvey(
       options: folders.map((f) => ({ value: f, label: f })),
       allowCustom: true,
     },
+    ...(appendable.length > 0
+      ? [
+          {
+            id: "append",
+            prompt: "В заметку",
+            options: appendOptions(folders[0] ?? ""),
+            optionsByFolder: Object.fromEntries(folders.map((f) => [f, appendOptions(f)])),
+          },
+        ]
+      : []),
     {
       id: "kind",
       prompt: "Что это?",
