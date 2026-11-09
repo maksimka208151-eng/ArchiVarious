@@ -16,11 +16,11 @@
   },
   "devDependencies": {
     "@tsconfig/svelte": "5.0.8",
-    "builtin-modules": "5.4.0",
+    "builtin-modules": "5.5.0",
     "esbuild": "0.28.2",
     "esbuild-svelte": "0.9.5",
     "obsidian": "1.14.4",
-    "svelte": "5.57.2",
-    "svelte-check": "4.7.7"
+    "svelte": "5.57.3",
+    "svelte-check": "4.7.8"
   }
 }
