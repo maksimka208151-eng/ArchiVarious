@@ -12,6 +12,12 @@
     plus: "M12 5v14M5 12h14",
     check: "M5 12.5 10 17l9-10",
     close: "M6 6l12 12M18 6 6 18",
+    inbox: "M4 13h4l2 3h4l2-3h4M4 13l2.5-7h11L20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5Z",
+    chart: "M4 20h16M7 16v-5M12 16V6M17 16V9",
+    bell: "M6 16v-5a6 6 0 0 1 12 0v5l2 2H4l2-2ZM10 21h4",
+    image: "M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM4 16l5-5 4 4 2-2 5 5M15 9h.01",
+    flame: "M12 21c3.5 0 6-2.5 6-6 0-4-3-6-4-10-1 2-2 3-3.2 3.2C10.5 6.5 10 5 9 4c0 3-3 5.5-3 11 0 3.5 2.5 6 6 6Z",
+    back: "M15 5l-7 7 7 7",
   } as const;
 
   export type IconName = keyof typeof ICONS | "logo";

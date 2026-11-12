@@ -1,4 +1,4 @@
-import { type SurveyAnswers, scheduleReview } from "@archivarious/core";
+import { type AppendableNote, SECTIONS_FILE, type SurveyAnswers, scheduleReview } from "@archivarious/core";
 import { type App, normalizePath, TFile } from "obsidian";
 import type { ArchiVariousSettings } from "./settings";
 
@@ -64,6 +64,19 @@ async function ensureHub(app: App, folder: string): Promise<TFile> {
   const existing = app.vault.getAbstractFileByPath(hubPath);
   if (existing instanceof TFile) return existing;
   return app.vault.create(hubPath, `# ${name}\n`);
+}
+
+/**
+ * Existing notes a new capture can be added to: notes in folders, outside the inbox, except folder hubs
+ * and the section list. Folders are offered as the survey's own options, so the list is filtered there.
+ */
+export function appendableNotes(app: App, inboxFolder: string): AppendableNote[] {
+  return app.vault
+    .getMarkdownFiles()
+    .filter((f) => f.parent && f.parent.path !== "/")
+    .filter((f) => !f.path.startsWith(`${inboxFolder}/`) && f.path !== SECTIONS_FILE)
+    .filter((f) => f.basename !== f.parent?.name)
+    .map((f) => ({ folder: f.parent?.path ?? "", path: f.path, title: f.basename }));
 }
 
 export async function ensureFolder(app: App, folder: string): Promise<void> {

@@ -13,6 +13,8 @@ export class CaptureModal extends Modal {
     private readonly onCapture: (raw: string, now: boolean) => Promise<void>,
     /** "Task to calendar" mode. Throws on failure so the modal stays open with the text. */
     private readonly onCalendar: (raw: string, when: EventWhen) => Promise<void>,
+    /** Saves a pasted picture and returns the embed for the note. */
+    private readonly onImage: (data: ArrayBuffer, mime: string) => Promise<string>,
   ) {
     super(app);
   }
@@ -35,6 +37,7 @@ export class CaptureModal extends Modal {
           await this.onCalendar(raw, when);
           this.close();
         },
+        onimage: (data: ArrayBuffer, mime: string) => this.onImage(data, mime),
         oncancel: () => this.close(),
       },
     });

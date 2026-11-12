@@ -15,6 +15,7 @@
     "core:window:allow-unminimize",
     "os:default",
     "dialog:allow-open",
+    "notification:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",

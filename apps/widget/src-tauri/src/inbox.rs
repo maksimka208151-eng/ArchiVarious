@@ -26,7 +26,7 @@ pub fn write_capture(
     contents: String,
 ) -> Result<String, String> {
     let target = resolve_target(Path::new(&vault_path), &inbox_folder, &file_name)?;
-    create_new_file(&target, &contents).map_err(|e| e.to_string())?;
+    create_new_file(&target, contents.as_bytes()).map_err(|e| e.to_string())?;
     Ok(target.to_string_lossy().into_owned())
 }
 
@@ -49,13 +49,35 @@ pub fn write_note_unique(
             format!("{stem} {n}.md")
         };
         let target = resolve_target(vault, &folder, &candidate)?;
-        match create_new_file(&target, &contents) {
+        match create_new_file(&target, contents.as_bytes()) {
             Ok(()) => return Ok(candidate),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e.to_string()),
         }
     }
     Err("too many notes with the same name".into())
+}
+
+/// Adds an entry to the end of an existing note. `block` is the entry as Markdown (`entryBlock` in core);
+/// the separator before it is chosen from how the note already ends, so nothing above it changes.
+#[tauri::command]
+pub fn append_to_note(vault_path: String, path: String, block: String) -> Result<(), String> {
+    let (folder, file_name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+    let target = resolve_target(Path::new(&vault_path), folder, file_name)?;
+    let existing = fs::read_to_string(&target).map_err(|e| e.to_string())?;
+    let separator = if existing.trim().is_empty() || existing.ends_with("\n\n") {
+        ""
+    } else if existing.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    };
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(&target)
+        .map_err(|e| e.to_string())?;
+    file.write_all(format!("{separator}{block}").as_bytes())
+        .map_err(|e| e.to_string())
 }
 
 /// Creates the note only if it does not exist yet (folder hub notes). Returns whether it was created.
@@ -67,7 +89,7 @@ pub fn ensure_note(
     contents: String,
 ) -> Result<bool, String> {
     let target = resolve_target(Path::new(&vault_path), &folder, &file_name)?;
-    match create_new_file(&target, &contents) {
+    match create_new_file(&target, contents.as_bytes()) {
         Ok(()) => Ok(true),
         Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(false),
         Err(e) => Err(e.to_string()),
@@ -188,14 +210,14 @@ fn scan_dir(dir: &Path, relative: &str, inbox: &str, notes: &mut Vec<NoteSnippet
     }
 }
 
-fn read_head(path: &Path) -> Option<String> {
+pub(crate) fn read_head(path: &Path) -> Option<String> {
     let file = fs::File::open(path).ok()?;
     let mut bytes = Vec::new();
     file.take(SNIPPET_BYTES).read_to_end(&mut bytes).ok()?;
     Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-fn create_new_file(target: &Path, contents: &str) -> std::io::Result<()> {
+pub(crate) fn create_new_file(target: &Path, contents: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -204,17 +226,32 @@ fn create_new_file(target: &Path, contents: &str) -> std::io::Result<()> {
         .write(true)
         .create_new(true)
         .open(target)?;
-    file.write_all(contents.as_bytes())
+    file.write_all(contents)
 }
 
-fn check_vault(vault: &Path) -> Result<(), String> {
+pub(crate) fn check_vault(vault: &Path) -> Result<(), String> {
     if !vault.is_absolute() || !vault.is_dir() {
         return Err(format!("vault folder not found: {}", vault.display()));
     }
     Ok(())
 }
 
-fn resolve_target(vault: &Path, folder: &str, file_name: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_target(
+    vault: &Path,
+    folder: &str,
+    file_name: &str,
+) -> Result<PathBuf, String> {
+    resolve_file(vault, folder, file_name, &["md"])
+}
+
+/// `<vault>/<folder>/<file_name>` after checking that it stays inside the vault, outside hidden folders,
+/// and that the file name is a single name with one of the allowed extensions.
+pub(crate) fn resolve_file(
+    vault: &Path,
+    folder: &str,
+    file_name: &str,
+    extensions: &[&str],
+) -> Result<PathBuf, String> {
     check_vault(vault)?;
     let folder = Path::new(folder);
     if !folder
@@ -232,8 +269,18 @@ fn resolve_target(vault: &Path, folder: &str, file_name: &str) -> Result<PathBuf
         return Err("folder must not be a hidden folder".into());
     }
     let name = Path::new(file_name);
-    if name.components().count() != 1 || name.extension().and_then(|e| e.to_str()) != Some("md") {
-        return Err("file name must be a single .md file name".into());
+    let extension = name
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase);
+    if name.components().count() != 1
+        || !matches!(name.components().next(), Some(Component::Normal(_)))
+        || !extension.is_some_and(|e| extensions.contains(&e.as_str()))
+    {
+        return Err(format!(
+            "file name must be a single file name ending in .{}",
+            extensions.join(" / .")
+        ));
     }
     Ok(vault.join(folder).join(name))
 }
@@ -283,6 +330,22 @@ mod tests {
 
         let (v, i, f, c) = args();
         assert!(write_capture(v, i, f, c).is_err());
+        fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
+    fn appends_an_entry_after_the_existing_text() {
+        let vault = temp_vault("append");
+        fs::create_dir_all(vault.join("Learning")).unwrap();
+        fs::write(vault.join("Learning/Ideas.md"), "# Ideas\n").unwrap();
+        append_to_note(s(&vault), "Learning/Ideas.md".into(), "### one\n".into()).unwrap();
+        append_to_note(s(&vault), "Learning/Ideas.md".into(), "### two\n".into()).unwrap();
+        assert_eq!(
+            fs::read_to_string(vault.join("Learning/Ideas.md")).unwrap(),
+            "# Ideas\n\n### one\n\n### two\n"
+        );
+        assert!(append_to_note(s(&vault), "Learning/Missing.md".into(), "x".into()).is_err());
+        assert!(append_to_note(s(&vault), "../Ideas.md".into(), "x".into()).is_err());
         fs::remove_dir_all(&vault).unwrap();
     }
 
