@@ -73,10 +73,7 @@ export function renderGroundedMarkdown(summary: GroundedSummary, source: SourceD
     "",
   ];
   if (source.extraction?.status === "partial") {
-    lines.push(
-      "> PDF обработан частично. Конспект не охватывает все страницы или визуальные элементы.",
-      "",
-    );
+    lines.push("> PDF обработан частично. Конспект не охватывает все страницы или визуальные элементы.", "");
   }
   for (const warning of source.warnings) lines.push(`> ${escapeMarkdown(warning)}`, "");
   for (const claim of summary.claims) {

@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { SourceDocument } from "@archivarious/core";
-import { runPipeline } from "./pipeline";
 import type { ExtractorMode } from "./hybrid";
+import { runPipeline } from "./pipeline";
 
 const help = `ArchiVarious — PDF → извлечённый текст → конспект с доказательствами
 

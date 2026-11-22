@@ -31,22 +31,37 @@ function pdf(pages) {
   }
   const xref = text.length;
   text += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  text += offsets.slice(1).map((n) => `${String(n).padStart(10, "0")} 00000 n \n`).join("");
+  text += offsets
+    .slice(1)
+    .map((n) => `${String(n).padStart(10, "0")} 00000 n \n`)
+    .join("");
   text += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return new TextEncoder().encode(text);
 }
 
 const sentence = "This is a sufficiently long paragraph from a digital PDF document.";
 const native = {
-  schemaVersion: 1, id: "hash", sha256: "hash", name: "test.pdf",
-  mediaType: "application/pdf", pageCount: 2, fragments: [], warnings: [],
+  schemaVersion: 1,
+  id: "hash",
+  sha256: "hash",
+  name: "test.pdf",
+  mediaType: "application/pdf",
+  pageCount: 2,
+  fragments: [],
+  warnings: [],
 };
 const payload = {
-  schemaVersion: 1, version: "test", pageCount: 2, warnings: [], reviewPages: [],
+  schemaVersion: 1,
+  version: "test",
+  pageCount: 2,
+  warnings: [],
+  reviewPages: [],
   blocks: [
     { page: 1, text: sentence, kind: "text" },
     {
-      page: 2, text: "| Name | Value |\n| --- | --- |\n| Mass | 10 kg |", kind: "table",
+      page: 2,
+      text: "| Name | Value |\n| --- | --- |\n| Mass | 10 kg |",
+      kind: "table",
       bounds: { left: 0, top: 100, right: 200, bottom: 0, origin: "BOTTOMLEFT" },
     },
   ],
@@ -64,13 +79,18 @@ test("Docling preserves tables, geometry, provenance and source identity", () =>
   assert.equal(result.extraction.status, "complete");
   assert.equal(result.fragments[1].kind, "table");
   assert.equal(result.fragments[1].bounds.origin, "BOTTOMLEFT");
-  const markdown = renderGroundedMarkdown({
-    title: "Table",
-    claims: [{
-      text: "Mass is 10 kg",
-      evidence: [{ fragmentId: result.fragments[1].id, quote: result.fragments[1].text }],
-    }],
-  }, result);
+  const markdown = renderGroundedMarkdown(
+    {
+      title: "Table",
+      claims: [
+        {
+          text: "Mass is 10 kg",
+          evidence: [{ fragmentId: result.fragments[1].id, quote: result.fragments[1].text }],
+        },
+      ],
+    },
+    result,
+  );
   assert.match(markdown, /original.pdf#page=2/);
 });
 test("missing pages, pictures and formulas produce partial extraction", () => {
@@ -104,7 +124,9 @@ test("mixed PDF routes to Docling; unavailable OCR keeps explicit partial output
   });
   assert.equal(called, true);
   assert.equal(result.extraction.engine, "docling");
-  const unavailable = async () => { throw new Error("offline"); };
+  const unavailable = async () => {
+    throw new Error("offline");
+  };
   const failed = await extractDocument(bytes, "mixed.pdf", {}, unavailable);
   assert.equal(failed.extraction.status, "partial");
   assert.equal(failed.extraction.pages[1].status, "needs-review");
@@ -127,7 +149,8 @@ test("partial extraction blocks model calls; explicit override keeps partial sta
     await assert.rejects(runPipeline(input, output, summarize, undefined, { extractor: "pdfjs" }));
     assert.equal(calls, 0);
     const directory = await runPipeline(input, output, summarize, undefined, {
-      extractor: "pdfjs", allowPartial: true,
+      extractor: "pdfjs",
+      allowPartial: true,
     });
     assert.equal(calls, 1);
     assert.equal(JSON.parse(await readFile(join(directory, "completed.json"), "utf8")).status, "partial");

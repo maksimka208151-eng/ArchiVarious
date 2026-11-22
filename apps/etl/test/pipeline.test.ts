@@ -46,7 +46,11 @@ async function setup() {
 describe("PDF pipeline", () => {
   it("extracts a real PDF with page references and deterministic content hash", async () => {
     const source = await extractPdf(pdfFixture(), "input.pdf");
-    expect(source.fragments[0]).toMatchObject({ id: "p1-f1", page: 1, text: "Revenue increased by fifteen percent compared to the previous year." });
+    expect(source.fragments[0]).toMatchObject({
+      id: "p1-f1",
+      page: 1,
+      text: "Revenue increased by fifteen percent compared to the previous year.",
+    });
     expect(source.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
   it("preserves original and extracted text without a model call", async () => {

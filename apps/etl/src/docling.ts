@@ -82,10 +82,7 @@ export function normalizeDocling(value: unknown, native: SourceDocument): Source
   return {
     ...native,
     fragments,
-    warnings: [
-      ...data.warnings,
-      ...pages.flatMap((p) => p.reasons.map((r) => `Страница ${p.page}: ${r}.`)),
-    ],
+    warnings: [...data.warnings, ...pages.flatMap((p) => p.reasons.map((r) => `Страница ${p.page}: ${r}.`))],
     extraction: {
       engine: "docling",
       version: typeof data.version === "string" ? data.version : undefined,
@@ -114,7 +111,11 @@ export async function extractWithDocling(
         { timeout: 300_000, maxBuffer: 1024 * 1024, windowsHide: true },
         (error) => {
           if (error) {
-            reject(new Error("Docling недоступен или обработка завершилась ошибкой. Проверьте Python, зависимости и модели."));
+            reject(
+              new Error(
+                "Docling недоступен или обработка завершилась ошибкой. Проверьте Python, зависимости и модели.",
+              ),
+            );
           } else {
             resolve();
           }

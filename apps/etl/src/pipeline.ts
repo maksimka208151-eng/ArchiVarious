@@ -8,7 +8,7 @@ import {
   validateEvidence,
 } from "@archivarious/core";
 import { LIMITS } from "./extract";
-import { extractDocument, type ExtractionOptions } from "./hybrid";
+import { type ExtractionOptions, extractDocument } from "./hybrid";
 
 export type Summarizer = (source: SourceDocument) => Promise<GroundedSummary>;
 

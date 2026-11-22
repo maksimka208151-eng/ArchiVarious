@@ -31,7 +31,9 @@ export async function extractPdf(bytes: Uint8Array, name: string, allowEmpty = f
       if (total > LIMITS.characters) throw new Error("Больше 120 000 символов. Разделите PDF: текст не обрезается.");
       const reasons: string[] = [];
       if (text.replace(/\s/g, "").length < 40) reasons.push("мало текста; требуется проверка/OCR");
-      if (/\uFFFD|[\u0000-\u0008]/u.test(text)) reasons.push("повреждённый текстовый слой");
+      if (text.includes("\uFFFD") || [...text].some((character) => character.charCodeAt(0) <= 8)) {
+        reasons.push("повреждённый текстовый слой");
+      }
       const imageOps: number[] = [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject];
       if (operators.fnArray.some((op: number) => imageOps.includes(op))) reasons.push("изображения не прочитаны");
       const rows = new Map<number, number[]>();
