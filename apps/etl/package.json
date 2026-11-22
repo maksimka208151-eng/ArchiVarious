@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/cli.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test:hybrid": "tsx --test checks/hybrid.mjs"
   },
   "dependencies": {
     "@archivarious/core": "workspace:*",

@@ -6,7 +6,7 @@ import { extractPdf } from "../src/extract";
 import { runPipeline } from "../src/pipeline";
 
 /** Small real PDF with accurate xref offsets, no external fixture dependencies. */
-function pdfFixture(text = "Revenue increased by fifteen percent."): Uint8Array {
+function pdfFixture(text = "Revenue increased by fifteen percent compared to the previous year."): Uint8Array {
   const stream = `BT /F1 12 Tf 50 750 Td (${text}) Tj ET`;
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
@@ -46,7 +46,7 @@ async function setup() {
 describe("PDF pipeline", () => {
   it("extracts a real PDF with page references and deterministic content hash", async () => {
     const source = await extractPdf(pdfFixture(), "input.pdf");
-    expect(source.fragments[0]).toMatchObject({ id: "p1-f1", page: 1, text: "Revenue increased by fifteen percent." });
+    expect(source.fragments[0]).toMatchObject({ id: "p1-f1", page: 1, text: "Revenue increased by fifteen percent compared to the previous year." });
     expect(source.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
   it("preserves original and extracted text without a model call", async () => {

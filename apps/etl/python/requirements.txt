@@ -1,0 +1,2 @@
+# Optional local runtime; not bundled into Obsidian or the widget.
+docling[easyocr]==2.151.1
