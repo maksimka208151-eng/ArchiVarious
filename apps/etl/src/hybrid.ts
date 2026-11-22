@@ -1,5 +1,5 @@
 import type { SourceDocument } from "@archivarious/core";
-import { extractWithDocling } from "./docling";
+import { DoclingError, extractWithDocling } from "./docling";
 import { extractPdf } from "./extract";
 
 export type ExtractorMode = "auto" | "pdfjs" | "docling";
@@ -28,6 +28,7 @@ export async function extractDocument(
       warnings: [
         ...native.warnings,
         "Docling не завершил обработку: сохранён неполный результат PDF.js. Настройте Docling и повторите запуск.",
+        ...(error instanceof DoclingError ? [error.message] : []),
       ],
       extraction: {
         engine: "pdfjs",

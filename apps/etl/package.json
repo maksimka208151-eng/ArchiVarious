@@ -6,7 +6,7 @@
   "scripts": {
     "start": "tsx src/cli.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test:hybrid": "tsx --test checks/hybrid.mjs"
+    "test:hybrid": "node --import tsx --test checks/hybrid.mjs"
   },
   "dependencies": {
     "@archivarious/core": "workspace:*",

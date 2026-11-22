@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { SourceDocument } from "@archivarious/core";
@@ -54,6 +55,11 @@ async function main(): Promise<void> {
     allowPartial: values["allow-partial"],
   });
   console.log(`Результат сохранён: ${directory}. Проверьте статус в run.json и предупреждения в source.json.`);
+  const source = JSON.parse(await readFile(resolve(directory, "source.json"), "utf8")) as SourceDocument;
+  console.log(`Извлечено символов: ${source.fragments.reduce((total, fragment) => total + fragment.text.length, 0)}.`);
+  if (source.extraction?.status === "partial") {
+    console.warn("Внимание: PDF прочитан частично. Откройте extracted.md: там указаны пропуски и причины.");
+  }
 }
 
 main().catch((error: unknown) => {

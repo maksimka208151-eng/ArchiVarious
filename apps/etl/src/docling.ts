@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { type ExecFileException, execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,30 @@ import { fileURLToPath } from "node:url";
 import type { SourceDocument, SourceFragment } from "@archivarious/core";
 import { chunks } from "./chunks";
 import { LIMITS } from "./extract";
+
+export class DoclingError extends Error {}
+
+/** Only fixed, actionable diagnostics may cross into logs or source exports. */
+export function doclingFailure(error: ExecFileException, stderr: string): DoclingError {
+  if (error.code === "ENOENT") {
+    return new DoclingError(
+      "Python для Docling не найден. Задайте ARCHIVARIOUS_PYTHON: путь к python.exe окружения Docling.",
+    );
+  }
+  if (/No module named ['"](?:docling|easyocr)(?:[.'"])/.test(stderr)) {
+    return new DoclingError(
+      "В выбранном Python не установлен Docling/OCR. Установите apps/etl/python/requirements.txt в это окружение.",
+    );
+  }
+  if (error.killed) {
+    return new DoclingError(
+      "Docling превысил время обработки (5 минут) или лимит вывода. Подготовьте модели и разделите большой PDF на части.",
+    );
+  }
+  return new DoclingError(
+    "Docling не завершил обработку. Проверьте зависимости и доступность моделей; инструкция: docs/ETL.md.",
+  );
+}
 
 interface DoclingBlock {
   page: number;
@@ -109,13 +133,9 @@ export async function extractWithDocling(
         python,
         [script, input, output],
         { timeout: 300_000, maxBuffer: 1024 * 1024, windowsHide: true },
-        (error) => {
+        (error, _stdout, stderr) => {
           if (error) {
-            reject(
-              new Error(
-                "Docling недоступен или обработка завершилась ошибкой. Проверьте Python, зависимости и модели.",
-              ),
-            );
+            reject(doclingFailure(error, stderr));
           } else {
             resolve();
           }

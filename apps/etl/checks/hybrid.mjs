@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { renderGroundedMarkdown } from "../../../packages/core/src/knowledge.ts";
 import { chunks } from "../src/chunks.ts";
-import { normalizeDocling } from "../src/docling.ts";
+import { doclingFailure, normalizeDocling } from "../src/docling.ts";
 import { extractDocument } from "../src/hybrid.ts";
 import { runPipeline } from "../src/pipeline.ts";
 
@@ -164,4 +164,57 @@ test("partial extraction blocks model calls; explicit override keeps partial sta
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("empty scan export explains OCR failure and never calls a model, even with override", async () => {
+  const root = await mkdtemp(join(tmpdir(), "archivarious-empty-"));
+  try {
+    const input = join(root, "scan.pdf");
+    const output = join(root, "out");
+    await writeFile(input, pdf(["", ""]));
+    let calls = 0;
+    await assert.rejects(
+      runPipeline(
+        input,
+        output,
+        async () => {
+          calls++;
+        },
+        undefined,
+        {
+          extractor: "pdfjs",
+          allowPartial: true,
+        },
+      ),
+      /Текст не извлечён/,
+    );
+    assert.equal(calls, 0);
+    const [run] = await readdir(output);
+    const directory = join(output, run);
+    assert.match(await readFile(join(directory, "extracted.md"), "utf8"), /Текст не извлечён/);
+    assert.match(await readFile(join(directory, "extracted.md"), "utf8"), /--extractor docling/);
+    assert.equal(JSON.parse(await readFile(join(directory, "failed.json"), "utf8")).stage, "extraction");
+    assert.equal(JSON.parse(await readFile(join(directory, "source.json"), "utf8")).fragments.length, 0);
+    assert.ok((await readdir(directory)).includes("original.pdf"));
+    assert.ok(!(await readdir(directory)).includes("summary.md"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("OCR diagnostics identify setup and timeout failures without exposing stderr", () => {
+  const missing = doclingFailure({ code: "ENOENT" }, "secret");
+  assert.match(missing.message, /ARCHIVARIOUS_PYTHON/);
+  const dependency = doclingFailure({}, "ModuleNotFoundError: No module named 'docling'\nsecret");
+  assert.match(dependency.message, /requirements.txt/);
+  assert.match(doclingFailure({ killed: true }, "secret").message, /5 минут/);
+  assert.ok(!doclingFailure({}, "secret provider data").message.includes("secret"));
+});
+
+test("missing Python is surfaced in auto fallback rather than discarded", async () => {
+  const result = await extractDocument(pdf([sentence, ""]), "mixed.pdf", {}, async () => {
+    throw doclingFailure({ code: "ENOENT" }, "secret");
+  });
+  assert.ok(result.warnings.some((w) => w.includes("ARCHIVARIOUS_PYTHON")));
+  assert.equal(result.extraction.status, "partial");
 });

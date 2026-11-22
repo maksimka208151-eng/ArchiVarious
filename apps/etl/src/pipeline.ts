@@ -7,7 +7,9 @@ import {
   type SourceDocument,
   validateEvidence,
 } from "@archivarious/core";
+import { DoclingError } from "./docling";
 import { LIMITS } from "./extract";
+import { renderExtraction } from "./extraction-report";
 import { type ExtractionOptions, extractDocument } from "./hybrid";
 
 export type Summarizer = (source: SourceDocument) => Promise<GroundedSummary>;
@@ -38,19 +40,17 @@ export async function runPipeline(
   try {
     source = await extractDocument(bytes, basename(input), options);
   } catch (error) {
+    const message = error instanceof DoclingError ? error.message : "Не удалось извлечь PDF; оригинал сохранён.";
     await save("failed.json", {
       status: "failed",
       stage: "extraction",
-      message: "Не удалось извлечь PDF; оригинал сохранён.",
+      message,
     });
-    throw new Error(`Не удалось извлечь PDF. Данные сохранены: ${directory}`, { cause: error });
+    throw new Error(`${message} Данные сохранены: ${directory}`, { cause: error });
   }
   await save("source.json", source);
-  await writeFile(
-    join(directory, "extracted.md"),
-    source.fragments.map((fragment) => `## ${fragment.id}\n\n${fragment.text}\n`).join("\n"),
-    { flag: "wx" },
-  );
+  await writeFile(join(directory, "extracted.md"), renderExtraction(source), { flag: "wx" });
+  const hasText = source.fragments.some((fragment) => fragment.text.trim().length >= 12);
   const startedAt = new Date().toISOString();
   await save("run.json", {
     schemaVersion: 1,
@@ -58,8 +58,20 @@ export async function runPipeline(
     startedAt,
     model: model ?? null,
     extractor: source.extraction,
-    status: source.extraction?.status === "partial" ? "partial" : summarize ? "generating" : "extracted",
+    status: !hasText
+      ? "failed"
+      : source.extraction?.status === "partial"
+        ? "partial"
+        : summarize
+          ? "generating"
+          : "extracted",
   });
+  if (!hasText) {
+    const message =
+      "Текст не извлечён: требуется работающий OCR. См. extracted.md и docs/ETL.md; повторите с --extractor docling.";
+    await save("failed.json", { status: "failed", stage: "extraction", message });
+    throw new Error(`${message} Данные сохранены: ${directory}`);
+  }
   if (!summarize) return directory;
   const blocked = source.extraction?.status === "partial" && !options.allowPartial;
   try {
