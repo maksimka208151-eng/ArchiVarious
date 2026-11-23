@@ -9,8 +9,36 @@ import { LIMITS } from "./extract";
 
 export class DoclingError extends Error {}
 
+export interface DoclingOptions {
+  ocrEngine?: "easyocr" | "tesseract";
+  timeoutSeconds?: number;
+  ocrScale?: number;
+}
+
+export function validateOcrOptions(options: DoclingOptions): void {
+  if (options.ocrEngine && !["easyocr", "tesseract"].includes(options.ocrEngine)) {
+    throw new Error("--ocr-engine: easyocr или tesseract.");
+  }
+  const seconds = options.timeoutSeconds ?? 300;
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+    throw new Error("--ocr-timeout: целое число секунд от 1 до 3600.");
+  }
+  const scale = options.ocrScale ?? 3;
+  if (!Number.isFinite(scale) || scale < 1 || scale > 4) {
+    throw new Error("--ocr-scale: число от 1 до 4 (72 DPI × масштаб).");
+  }
+}
+
 /** Only fixed, actionable diagnostics may cross into logs or source exports. */
 export function doclingFailure(error: ExecFileException, stderr: string): DoclingError {
+  if (stderr.includes("ARCHIVARIOUS_TESSERACT_LANGUAGES_MISSING")) {
+    return new DoclingError("В Tesseract нужны языки eng и rus. Проверьте tesseract --list-langs и TESSDATA_PREFIX.");
+  }
+  if (stderr.includes("ARCHIVARIOUS_TESSERACT_MISSING")) {
+    return new DoclingError(
+      "Tesseract не найден в PATH. Установите Tesseract 5 с языками eng и rus или выберите --ocr-engine easyocr.",
+    );
+  }
   if (error.code === "ENOENT") {
     return new DoclingError(
       "Python для Docling не найден. Задайте ARCHIVARIOUS_PYTHON: путь к python.exe окружения Docling.",
@@ -23,7 +51,7 @@ export function doclingFailure(error: ExecFileException, stderr: string): Doclin
   }
   if (error.killed) {
     return new DoclingError(
-      "Docling превысил время обработки (5 минут) или лимит вывода. Подготовьте модели и разделите большой PDF на части.",
+      "Docling превысил время обработки или лимит вывода. Подготовьте модели; увеличьте --ocr-timeout или разделите PDF.",
     );
   }
   return new DoclingError(
@@ -48,6 +76,7 @@ export function normalizeDocling(value: unknown, native: SourceDocument): Source
     blocks?: unknown;
     warnings?: unknown;
     reviewPages?: unknown;
+    ocrEngine?: unknown;
   };
   if (
     data.schemaVersion !== 1 ||
@@ -109,6 +138,7 @@ export function normalizeDocling(value: unknown, native: SourceDocument): Source
     warnings: [...data.warnings, ...pages.flatMap((p) => p.reasons.map((r) => `Страница ${p.page}: ${r}.`))],
     extraction: {
       engine: "docling",
+      ocrEngine: data.ocrEngine === "easyocr" || data.ocrEngine === "tesseract" ? data.ocrEngine : undefined,
       version: typeof data.version === "string" ? data.version : undefined,
       status: pages.some((p) => p.status === "needs-review") ? "partial" : "complete",
       pages,
@@ -119,20 +149,32 @@ export function normalizeDocling(value: unknown, native: SourceDocument): Source
 export async function extractWithDocling(
   bytes: Uint8Array,
   native: SourceDocument,
-  python = process.env.ARCHIVARIOUS_PYTHON ?? "python",
+  options: DoclingOptions = {},
 ): Promise<SourceDocument> {
+  validateOcrOptions(options);
+  const python = process.env.ARCHIVARIOUS_PYTHON ?? "python";
   const directory = await mkdtemp(join(tmpdir(), "archivarious-docling-"));
   try {
     const input = join(directory, "input.pdf");
     const output = join(directory, "result.json");
     await writeFile(input, bytes);
     const script = fileURLToPath(new URL("../python/convert.py", import.meta.url));
+    const args = [
+      script,
+      input,
+      output,
+      "--ocr-engine",
+      options.ocrEngine ?? "easyocr",
+      "--ocr-scale",
+      String(options.ocrScale ?? 3),
+    ];
+    if (!native.fragments.some((fragment) => fragment.text.trim().length >= 12)) args.push("--force-ocr");
     await new Promise<void>((resolve, reject) => {
       // Never invoke a shell. Provider diagnostics are not included in errors.
       execFile(
         python,
-        [script, input, output],
-        { timeout: 300_000, maxBuffer: 1024 * 1024, windowsHide: true },
+        args,
+        { timeout: (options.timeoutSeconds ?? 300) * 1000, maxBuffer: 1024 * 1024, windowsHide: true },
         (error, _stdout, stderr) => {
           if (error) {
             reject(doclingFailure(error, stderr));

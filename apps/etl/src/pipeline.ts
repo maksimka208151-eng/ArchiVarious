@@ -58,6 +58,9 @@ export async function runPipeline(
     startedAt,
     model: model ?? null,
     extractor: source.extraction,
+    ocrEngine: options.ocrEngine ?? "easyocr",
+    ocrTimeoutSeconds: options.timeoutSeconds ?? 300,
+    ocrScale: options.ocrScale ?? 3,
     status: !hasText
       ? "failed"
       : source.extraction?.status === "partial"

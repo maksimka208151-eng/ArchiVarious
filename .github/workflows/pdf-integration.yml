@@ -21,5 +21,9 @@ jobs:
         run: |
           python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r apps/etl/python/requirements.txt reportlab
+      - name: Install Tesseract with Russian and English
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng
       - name: Convert digital and raster pages with real OCR
         run: python apps/etl/python/smoke.py
+      - name: Check the alternative OCR backend
+        run: python apps/etl/python/smoke.py tesseract

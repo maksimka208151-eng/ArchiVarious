@@ -1,13 +1,15 @@
 """Local-only Docling bridge. Process output is never treated as evidence."""
+import argparse
 import json
-import sys
+import shutil
+import subprocess
 from importlib.metadata import version
 from pathlib import Path
 
 
-def convert(input_path, output_path):
+def convert(input_path, output_path, ocr_engine="easyocr", force_ocr=False, ocr_scale=3):
     from docling.datamodel.base_models import InputFormat, ConversionStatus
-    from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+    from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions, TesseractCliOcrOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     options = PdfPipelineOptions()
@@ -15,7 +17,19 @@ def convert(input_path, output_path):
     options.do_table_structure = True
     options.enable_remote_services = False
     options.do_formula_enrichment = False
-    options.ocr_options = EasyOcrOptions(lang=["ru", "en"], use_gpu=False)
+    if ocr_engine == "tesseract":
+        if not shutil.which("tesseract"):
+            raise RuntimeError("ARCHIVARIOUS_TESSERACT_MISSING")
+        languages = subprocess.run(
+            ["tesseract", "--list-langs"], capture_output=True, text=True, check=True
+        ).stdout.splitlines()
+        if not {"eng", "rus"}.issubset({line.strip() for line in languages}):
+            raise RuntimeError("ARCHIVARIOUS_TESSERACT_LANGUAGES_MISSING")
+        options.ocr_options = TesseractCliOcrOptions(lang=["eng", "rus"], force_full_page_ocr=force_ocr, scale=ocr_scale)
+    elif ocr_engine == "easyocr":
+        options.ocr_options = EasyOcrOptions(lang=["ru", "en"], use_gpu=False, force_full_page_ocr=force_ocr, scale=ocr_scale)
+    else:
+        raise ValueError("Unsupported OCR engine")
     converter = DocumentConverter(format_options={
         InputFormat.PDF: PdfFormatOption(pipeline_options=options)
     })
@@ -46,6 +60,7 @@ def convert(input_path, output_path):
                        "bounds": {"left": b.l, "top": b.t, "right": b.r,
                                   "bottom": b.b, "origin": b.coord_origin.value}})
     payload = {"schemaVersion": 1, "version": version("docling"),
+               "ocrEngine": ocr_engine,
                "pageCount": len(doc.pages), "blocks": blocks,
                "reviewPages": sorted(review_pages),
                "warnings": ["OCR и структура таблиц требуют проверки; формулы и изображения не интерпретированы."]}
@@ -53,4 +68,13 @@ def convert(input_path, output_path):
 
 
 if __name__ == "__main__":
-    convert(sys.argv[1], sys.argv[2])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input")
+    parser.add_argument("output")
+    parser.add_argument("--ocr-engine", choices=["easyocr", "tesseract"], default="easyocr")
+    parser.add_argument("--force-ocr", action="store_true")
+    parser.add_argument("--ocr-scale", type=float, default=3)
+    args = parser.parse_args()
+    if not 1 <= args.ocr_scale <= 4:
+        parser.error("--ocr-scale must be between 1 and 4")
+    convert(args.input, args.output, args.ocr_engine, args.force_ocr, args.ocr_scale)

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { renderGroundedMarkdown } from "../../../packages/core/src/knowledge.ts";
 import { chunks } from "../src/chunks.ts";
-import { doclingFailure, normalizeDocling } from "../src/docling.ts";
+import { doclingFailure, normalizeDocling, validateOcrOptions } from "../src/docling.ts";
 import { extractDocument } from "../src/hybrid.ts";
 import { runPipeline } from "../src/pipeline.ts";
 
@@ -207,7 +207,7 @@ test("OCR diagnostics identify setup and timeout failures without exposing stder
   assert.match(missing.message, /ARCHIVARIOUS_PYTHON/);
   const dependency = doclingFailure({}, "ModuleNotFoundError: No module named 'docling'\nsecret");
   assert.match(dependency.message, /requirements.txt/);
-  assert.match(doclingFailure({ killed: true }, "secret").message, /5 минут/);
+  assert.match(doclingFailure({ killed: true }, "secret").message, /--ocr-timeout/);
   assert.ok(!doclingFailure({}, "secret provider data").message.includes("secret"));
 });
 
@@ -217,4 +217,37 @@ test("missing Python is surfaced in auto fallback rather than discarded", async 
   });
   assert.ok(result.warnings.some((w) => w.includes("ARCHIVARIOUS_PYTHON")));
   assert.equal(result.extraction.status, "partial");
+});
+
+test("OCR configuration is validated and forwarded to the selected backend", async () => {
+  assert.throws(() => validateOcrOptions({ ocrEngine: "unknown" }));
+  for (const ocrScale of [0, NaN, 4.1]) assert.throws(() => validateOcrOptions({ ocrScale }));
+  for (const timeoutSeconds of [0, NaN, 1.5, 3601]) {
+    assert.throws(() => validateOcrOptions({ timeoutSeconds }));
+  }
+  let received;
+  await extractDocument(
+    pdf([sentence]),
+    "digital.pdf",
+    {
+      extractor: "docling",
+      ocrEngine: "tesseract",
+      timeoutSeconds: 900,
+      ocrScale: 2,
+    },
+    async (_bytes, source, options) => {
+      received = options;
+      return source;
+    },
+  );
+  assert.equal(received.ocrEngine, "tesseract");
+  assert.equal(received.timeoutSeconds, 900);
+  assert.equal(received.ocrScale, 2);
+});
+
+test("Tesseract setup diagnostics distinguish missing binary and language data", () => {
+  assert.match(doclingFailure({}, "ARCHIVARIOUS_TESSERACT_MISSING").message, /PATH/);
+  assert.match(doclingFailure({}, "ARCHIVARIOUS_TESSERACT_LANGUAGES_MISSING").message, /--list-langs/);
+  const result = normalizeDocling({ ...payload, ocrEngine: "tesseract" }, native);
+  assert.equal(result.extraction.ocrEngine, "tesseract");
 });

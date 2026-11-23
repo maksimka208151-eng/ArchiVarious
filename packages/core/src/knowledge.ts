@@ -11,6 +11,7 @@ export interface SourceDocument {
   /** Optional for compatibility with earlier source exports. */
   extraction?: {
     engine: "pdfjs" | "docling";
+    ocrEngine?: "easyocr" | "tesseract";
     version?: string;
     status: "complete" | "partial";
     pages: { page: number; status: "read" | "needs-review"; reasons: string[] }[];
