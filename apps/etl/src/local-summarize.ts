@@ -150,6 +150,7 @@ export async function summarizeLocal(source: SourceDocument, options: LocalOptio
   const claims: GroundedSummary["claims"] = [];
   for (const [index, fragments] of batches.entries()) {
     let summary: GroundedSummary;
+    let received: unknown;
     try {
       const payload = await requestLocalJson(
         endpoint,
@@ -183,6 +184,7 @@ export async function summarizeLocal(source: SourceDocument, options: LocalOptio
         }),
         AbortSignal.timeout(timeout * 1000),
       );
+      received = payload;
       const envelope = envelopeSchema.parse(payload);
       const choice = envelope.choices[0];
       if (choice?.finish_reason !== "stop") {
@@ -204,6 +206,16 @@ export async function summarizeLocal(source: SourceDocument, options: LocalOptio
                 : error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")
                   ? `истёк таймаут модели (${timeout} с); увеличьте --llm-timeout или уменьшите --batch-chars`
                   : "ошибка соединения с локальной моделью; проверьте, что сервер работает";
+      if (received !== undefined) {
+        await options.onBatch?.(`rejected-batch-${String(index + 1).padStart(3, "0")}.json`, {
+          status: "rejected",
+          warning: "Непроверенный ответ модели. Не использовать как конспект.",
+          part: index + 1,
+          reason,
+          fragments: fragments.map(({ id, page, text }) => ({ fragmentId: id, page, text })),
+          response: received,
+        });
+      }
       throw new LocalModelError(
         `Часть ${index + 1}/${batches.length}: ${reason}. Проверьте сервер и сохранённый результат OCR.`,
       );

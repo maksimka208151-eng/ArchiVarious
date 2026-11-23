@@ -98,6 +98,28 @@ describe("local summarization", () => {
     const endpoint = await serve(() => payload);
     await expect(summarizeLocal(source, { endpoint })).rejects.toThrow(reason);
   });
+  it("saves the rejected response and exact batch without exporting an accepted summary", async () => {
+    const payload = answer("p1-f1", "Несуществующая дословная цитата");
+    const endpoint = await serve(() => payload);
+    const saved: { name: string; value: unknown }[] = [];
+    await expect(
+      summarizeLocal(source, {
+        endpoint,
+        onBatch: async (name, value) => {
+          saved.push({ name, value });
+        },
+      }),
+    ).rejects.toThrow("цитата модели не найдена");
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      name: "rejected-batch-001.json",
+      value: {
+        status: "rejected",
+        response: payload,
+        fragments: [{ fragmentId: "p1-f1", text: source.fragments[0]?.text }, { fragmentId: "p2-f1" }],
+      },
+    });
+  });
   it("accepts a JSON answer wrapped in Qwen reasoning and Markdown", async () => {
     const payload = answer();
     const choice = payload.choices[0];
