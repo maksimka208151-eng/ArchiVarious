@@ -33,7 +33,7 @@ async function serve(reply: (body: Record<string, unknown>) => unknown) {
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
-    const result = reply(JSON.parse(Buffer.concat(chunks).toString()));
+    const result = await reply(JSON.parse(Buffer.concat(chunks).toString()));
     response.setHeader("Content-Type", "application/json");
     response.end(JSON.stringify(result));
   });
@@ -57,6 +57,20 @@ function answer(fragmentId = "p1-f1", quote = source.fragments[0]?.text ?? "", r
   };
 }
 describe("local summarization", () => {
+  it("waits for delayed response headers within the configured model timeout", async () => {
+    const endpoint = await serve(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      return answer();
+    });
+    await expect(summarizeLocal(source, { endpoint, timeoutSeconds: 3 })).resolves.toHaveProperty("claims");
+  });
+  it("cancels slow generation and reports the configured timeout", async () => {
+    const endpoint = await serve(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return answer();
+    });
+    await expect(summarizeLocal(source, { endpoint, timeoutSeconds: 1 })).rejects.toThrow("таймаут модели (1 с)");
+  });
   it("sends structured text locally and reports uncited fragments without a completeness claim", async () => {
     const endpoint = await serve((body) => {
       expect(body.model).toBe("qwen3.5-9b");

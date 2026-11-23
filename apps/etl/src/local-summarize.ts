@@ -1,3 +1,5 @@
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { type GroundedSummary, type SourceDocument, type SourceFragment, validateEvidence } from "@archivarious/core";
 import { z } from "zod";
 import { chunks } from "./chunks";
@@ -62,23 +64,43 @@ const system = [
   "Разделяй самостоятельные факты на тезисы. Составляй конспект этой части, сохраняя порядок источника.",
 ].join("\n");
 
-async function boundedJson(response: Response): Promise<unknown> {
-  if (!response.body) throw new LocalModelError("Локальный сервер вернул пустой ответ.");
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 2_000_000) throw new LocalModelError("Ответ локального сервера слишком большой.");
-      chunks.push(value);
-    }
-  } finally {
-    await reader.cancel();
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+// Native HTTP avoids fetch/Undici's independent headers timeout while a local
+// non-streaming model is still generating. The signal bounds the entire request.
+async function requestLocalJson(endpoint: string, body: string, signal: AbortSignal): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const request = (new URL(endpoint).protocol === "https:" ? httpsRequest : httpRequest)(
+      endpoint,
+      { method: "POST", headers: { "Content-Type": "application/json" }, signal },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          response.destroy();
+          reject(new LocalModelError(`локальный сервер вернул HTTP ${status}`));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        response.on("error", reject);
+        response.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > 2_000_000) {
+            response.destroy(new LocalModelError("Ответ локального сервера слишком большой."));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("end", () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    request.on("error", reject);
+    request.end(body);
+  });
 }
 
 const envelopeSchema = z.object({
@@ -129,12 +151,9 @@ export async function summarizeLocal(source: SourceDocument, options: LocalOptio
   for (const [index, fragments] of batches.entries()) {
     let summary: GroundedSummary;
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        redirect: "error",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(timeout * 1000),
-        body: JSON.stringify({
+      const payload = await requestLocalJson(
+        endpoint,
+        JSON.stringify({
           model: options.model ?? LOCAL_MODEL,
           stream: false,
           temperature: 0.2,
@@ -162,12 +181,9 @@ export async function summarizeLocal(source: SourceDocument, options: LocalOptio
             },
           ],
         }),
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new LocalModelError(`локальный сервер вернул HTTP ${response.status}`);
-      }
-      const envelope = envelopeSchema.parse(await boundedJson(response));
+        AbortSignal.timeout(timeout * 1000),
+      );
+      const envelope = envelopeSchema.parse(payload);
       const choice = envelope.choices[0];
       if (choice?.finish_reason !== "stop") {
         throw new LocalModelError(`модель завершила ответ с причиной ${choice?.finish_reason ?? "неизвестно"}`);
@@ -185,7 +201,9 @@ export async function summarizeLocal(source: SourceDocument, options: LocalOptio
               ? "ответ модели не соответствует схеме конспекта или содержит неполную цитату"
               : error instanceof Error && error.message.startsWith("Непроверяемая цитата")
                 ? "цитата модели не найдена дословно в текущей части OCR"
-                : "не удалось получить или проверить ответ модели";
+                : error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")
+                  ? `истёк таймаут модели (${timeout} с); увеличьте --llm-timeout или уменьшите --batch-chars`
+                  : "ошибка соединения с локальной моделью; проверьте, что сервер работает";
       throw new LocalModelError(
         `Часть ${index + 1}/${batches.length}: ${reason}. Проверьте сервер и сохранённый результат OCR.`,
       );
