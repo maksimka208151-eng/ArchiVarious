@@ -15,3 +15,6 @@ apps/widget/src-tauri/gen/schemas/
 
 # Local test vault
 .dev-vault/
+
+/.venv-docling/
+__pycache__/

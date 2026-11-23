@@ -31,9 +31,14 @@ export async function summarizeSource(source: SourceDocument, model: string): Pr
       "Каждый тезис должен подтверждаться одной или несколькими точными дословными цитатами длиной от 12 символов.",
       "Копируй fragmentId и quote без изменений, включая пробелы и переносы строк. Не придумывай ссылки.",
       "Не добавляй внешние знания или собственные выводы. Сохраняй оговорки, числа и противоречия источника.",
-      "Не заявляй, что проанализированы изображения, таблицы или сканы: доступен только извлечённый текст.",
+      "Доступны только извлечённые фрагменты. Таблицы/OCR могут содержать ошибки; изображения не интерпретированы.",
+      "Учитывай предупреждения и пропуски страниц. Не заявляй о полноте анализа документа.",
     ].join("\n"),
-    prompt: JSON.stringify(source.fragments.map(({ id, page, text }) => ({ fragmentId: id, page, text }))),
+    prompt: JSON.stringify({
+      warnings: source.warnings,
+      extraction: source.extraction,
+      fragments: source.fragments.map(({ id, page, text, kind }) => ({ fragmentId: id, page, text, kind })),
+    }),
   });
   return output;
 }

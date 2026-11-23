@@ -7,7 +7,10 @@ import {
   type SourceDocument,
   validateEvidence,
 } from "@archivarious/core";
-import { extractPdf, LIMITS } from "./extract";
+import { DoclingError } from "./docling";
+import { LIMITS } from "./extract";
+import { renderExtraction } from "./extraction-report";
+import { type ExtractionOptions, extractDocument } from "./hybrid";
 
 export type Summarizer = (source: SourceDocument) => Promise<GroundedSummary>;
 
@@ -16,6 +19,7 @@ export async function runPipeline(
   outputRoot: string,
   summarize?: Summarizer,
   model?: string,
+  options: ExtractionOptions = {},
 ): Promise<string> {
   const file = await open(resolve(input), "r");
   let bytes: Uint8Array;
@@ -26,35 +30,63 @@ export async function runPipeline(
   } finally {
     await file.close();
   }
-  const source = await extractPdf(bytes, basename(input));
   // New directory per attempt: a failed or repeated run cannot overwrite earlier results.
-  const directory = join(resolve(outputRoot), `${source.sha256.slice(0, 16)}-${randomUUID()}`);
+  const directory = join(resolve(outputRoot), randomUUID());
   await mkdir(directory, { recursive: true });
   const save = (name: string, value: unknown) =>
     writeFile(join(directory, name), `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
   await writeFile(join(directory, "original.pdf"), bytes, { flag: "wx" });
+  let source: SourceDocument;
+  try {
+    source = await extractDocument(bytes, basename(input), options);
+  } catch (error) {
+    const message = error instanceof DoclingError ? error.message : "Не удалось извлечь PDF; оригинал сохранён.";
+    await save("failed.json", {
+      status: "failed",
+      stage: "extraction",
+      message,
+    });
+    throw new Error(`${message} Данные сохранены: ${directory}`, { cause: error });
+  }
   await save("source.json", source);
-  await writeFile(
-    join(directory, "extracted.md"),
-    source.fragments.map((fragment) => `## ${fragment.id}\n\n${fragment.text}\n`).join("\n"),
-    { flag: "wx" },
-  );
+  await writeFile(join(directory, "extracted.md"), renderExtraction(source), { flag: "wx" });
+  const hasText = source.fragments.some((fragment) => fragment.text.trim().length >= 12);
   const startedAt = new Date().toISOString();
   await save("run.json", {
     schemaVersion: 1,
     sourceId: source.id,
     startedAt,
     model: model ?? null,
-    extractor: "pdfjs-text-v1",
-    status: summarize ? "generating" : "extracted",
+    extractor: source.extraction,
+    ocrEngine: options.ocrEngine ?? "easyocr",
+    ocrTimeoutSeconds: options.timeoutSeconds ?? 300,
+    ocrScale: options.ocrScale ?? 3,
+    status: !hasText
+      ? "failed"
+      : source.extraction?.status === "partial"
+        ? "partial"
+        : summarize
+          ? "generating"
+          : "extracted",
   });
+  if (!hasText) {
+    const message =
+      "Текст не извлечён: требуется работающий OCR. См. extracted.md и docs/ETL.md; повторите с --extractor docling.";
+    await save("failed.json", { status: "failed", stage: "extraction", message });
+    throw new Error(`${message} Данные сохранены: ${directory}`);
+  }
   if (!summarize) return directory;
+  const blocked = source.extraction?.status === "partial" && !options.allowPartial;
   try {
+    if (blocked) throw new Error("PDF прочитан частично; требуется проверка или --allow-partial.");
     const summary = await summarize(source);
     validateEvidence(summary, source);
     await save("summary.json", summary);
     await writeFile(join(directory, "summary.md"), renderGroundedMarkdown(summary, source), { flag: "wx" });
-    await save("completed.json", { completedAt: new Date().toISOString(), status: "complete" });
+    await save("completed.json", {
+      completedAt: new Date().toISOString(),
+      status: source.extraction?.status === "partial" ? "partial" : "complete",
+    });
   } catch (error) {
     // Provider errors can contain credentials or source text; keep the persisted failure generic.
     await save("failed.json", {
@@ -62,7 +94,10 @@ export async function runPipeline(
       status: "failed",
       message: "Конспект не создан или не прошёл проверку. Оригинал и извлечённый текст сохранены.",
     });
-    throw new Error(`Не удалось создать проверяемый конспект. Данные сохранены: ${directory}`, { cause: error });
+    const message = blocked
+      ? "PDF прочитан частично. Проверьте source.json; --allow-partial разрешает конспект с пропусками."
+      : "Не удалось создать проверяемый конспект.";
+    throw new Error(`${message} Данные сохранены: ${directory}`, { cause: error });
   }
   return directory;
 }

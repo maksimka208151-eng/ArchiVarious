@@ -17,7 +17,7 @@
     "build:installer": "node apps/installer/build.mjs",
     "build:widget": "pnpm --filter @archivarious/widget tauri build",
     "typecheck": "pnpm -r typecheck",
-    "test": "vitest run",
+    "test": "vitest run && pnpm --filter @archivarious/etl test:hybrid",
     "test:watch": "vitest",
     "lint": "biome check .",
     "format": "biome check --write .",

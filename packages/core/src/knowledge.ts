@@ -8,12 +8,23 @@ export interface SourceDocument {
   pageCount: number;
   fragments: SourceFragment[];
   warnings: string[];
+  /** Optional for compatibility with earlier source exports. */
+  extraction?: {
+    engine: "pdfjs" | "docling";
+    ocrEngine?: "easyocr" | "tesseract";
+    version?: string;
+    status: "complete" | "partial";
+    pages: { page: number; status: "read" | "needs-review"; reasons: string[] }[];
+  };
 }
 
 export interface SourceFragment {
   id: string;
   page: number;
   text: string;
+  kind?: string;
+  bounds?: { left: number; top: number; right: number; bottom: number; origin: string };
+  method?: "native" | "docling";
 }
 
 export interface Evidence {
@@ -62,6 +73,9 @@ export function renderGroundedMarkdown(summary: GroundedSummary, source: SourceD
     "Черновик ИИ. Ссылки и точность цитат проверены программно; смысл тезисов требует проверки по оригиналу.",
     "",
   ];
+  if (source.extraction?.status === "partial") {
+    lines.push("> PDF обработан частично. Конспект не охватывает все страницы или визуальные элементы.", "");
+  }
   for (const warning of source.warnings) lines.push(`> ${escapeMarkdown(warning)}`, "");
   for (const claim of summary.claims) {
     lines.push(`- ${escapeMarkdown(claim.text.replace(/\s+/g, " "))}`);
