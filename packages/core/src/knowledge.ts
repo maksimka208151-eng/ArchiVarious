@@ -40,6 +40,13 @@ export interface GroundedClaim {
 export interface GroundedSummary {
   title: string;
   claims: GroundedClaim[];
+  /** Mechanical accounting only; does not establish semantic coverage or accuracy. */
+  coverage?: {
+    parts: number;
+    processedFragmentIds: string[];
+    citedFragmentIds: string[];
+    uncitedFragmentIds: string[];
+  };
 }
 
 /** Checks traceability, not whether the quotation logically proves the claim. */
@@ -75,6 +82,12 @@ export function renderGroundedMarkdown(summary: GroundedSummary, source: SourceD
   ];
   if (source.extraction?.status === "partial") {
     lines.push("> PDF обработан частично. Конспект не охватывает все страницы или визуальные элементы.", "");
+  }
+  if (summary.coverage) {
+    lines.push(
+      `Обработано частей: ${summary.coverage.parts}. Фрагментов без цитат: ${summary.coverage.uncitedFragmentIds.length}. Наличие цитаты не доказывает полноту или правильность тезиса.`,
+      "",
+    );
   }
   for (const warning of source.warnings) lines.push(`> ${escapeMarkdown(warning)}`, "");
   for (const claim of summary.claims) {
