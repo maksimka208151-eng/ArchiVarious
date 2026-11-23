@@ -85,12 +85,37 @@ const envelopeSchema = z.object({
   choices: z
     .array(
       z.object({
-        finish_reason: z.literal("stop"),
+        finish_reason: z.string().nullable(),
         message: z.object({ content: z.string() }),
       }),
     )
     .length(1),
 });
+
+/**
+ * Some Qwen/llama.cpp combinations still emit a reasoning wrapper or a Markdown
+ * fence despite a JSON schema. The wrapper is not part of the requested answer.
+ * We only accept the enclosed object after it independently passes the schema and
+ * evidence validation below.
+ */
+function parseModelJson(content: string): unknown {
+  const withoutReasoning = content.replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, "");
+  const unfenced = withoutReasoning.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "");
+  try {
+    return JSON.parse(unfenced);
+  } catch {
+    const start = unfenced.indexOf("{");
+    const end = unfenced.lastIndexOf("}");
+    if (start < 0 || end <= start) {
+      throw new LocalModelError("модель вернула текст вместо JSON-конспекта");
+    }
+    try {
+      return JSON.parse(unfenced.slice(start, end + 1));
+    } catch {
+      throw new LocalModelError("модель вернула некорректный JSON-конспект");
+    }
+  }
+}
 
 export async function summarizeLocal(source: SourceDocument, options: LocalOptions = {}): Promise<GroundedSummary> {
   const endpoint = localEndpoint(options.endpoint);
@@ -140,15 +165,29 @@ export async function summarizeLocal(source: SourceDocument, options: LocalOptio
       });
       if (!response.ok) {
         await response.body?.cancel();
-        throw new Error("Server error");
+        throw new LocalModelError(`локальный сервер вернул HTTP ${response.status}`);
       }
       const envelope = envelopeSchema.parse(await boundedJson(response));
-      summary = summarySchema.parse(JSON.parse(envelope.choices[0]?.message.content ?? ""));
+      const choice = envelope.choices[0];
+      if (choice?.finish_reason !== "stop") {
+        throw new LocalModelError(`модель завершила ответ с причиной ${choice?.finish_reason ?? "неизвестно"}`);
+      }
+      summary = summarySchema.parse(parseModelJson(choice.message.content));
       // A citation from another batch is not accepted even if it exists elsewhere in the document.
       validateEvidence(summary, { ...source, fragments });
-    } catch {
+    } catch (error) {
+      const reason =
+        error instanceof LocalModelError
+          ? error.message
+          : error instanceof SyntaxError
+            ? "сервер вернул некорректный JSON"
+            : error instanceof z.ZodError
+              ? "ответ модели не соответствует схеме конспекта или содержит неполную цитату"
+              : error instanceof Error && error.message.startsWith("Непроверяемая цитата")
+                ? "цитата модели не найдена дословно в текущей части OCR"
+                : "не удалось получить или проверить ответ модели";
       throw new LocalModelError(
-        `Часть ${index + 1}/${batches.length}: сервер недоступен, ответ оборван или цитаты/JSON не прошли проверку. Проверьте локальный сервер и его контекст.`,
+        `Часть ${index + 1}/${batches.length}: ${reason}. Проверьте сервер и сохранённый результат OCR.`,
       );
     }
     claims.push(...summary.claims);

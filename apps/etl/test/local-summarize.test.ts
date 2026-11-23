@@ -76,13 +76,23 @@ describe("local summarization", () => {
     expect(artifacts).toEqual(["batch-001.json"]);
   });
   it.each([
-    ["fabricated quote", answer("p1-f1", "Несуществующая дословная цитата")],
-    ["fabricated ID", answer("p100-f1")],
-    ["truncated output", answer("p1-f1", source.fragments[0]?.text, "length")],
-    ["empty response", { choices: [] }],
-  ])("rejects %s", async (_, payload) => {
+    ["fabricated quote", answer("p1-f1", "Несуществующая дословная цитата"), "цитата модели не найдена"],
+    ["fabricated ID", answer("p100-f1"), "цитата модели не найдена"],
+    ["truncated output", answer("p1-f1", source.fragments[0]?.text, "length"), "причиной length"],
+    ["empty response", { choices: [] }, "не соответствует схеме"],
+  ])("rejects %s", async (_, payload, reason) => {
     const endpoint = await serve(() => payload);
-    await expect(summarizeLocal(source, { endpoint })).rejects.toThrow("не прошли проверку");
+    await expect(summarizeLocal(source, { endpoint })).rejects.toThrow(reason);
+  });
+  it("accepts a JSON answer wrapped in Qwen reasoning and Markdown", async () => {
+    const payload = answer();
+    const choice = payload.choices[0];
+    if (!choice) throw new Error("fixture should include one completion choice");
+    choice.message.content = `<think>Сначала проверю формат.</think>\n\`\`\`json\n${choice.message.content}\n\`\`\``;
+    const endpoint = await serve(() => payload);
+    await expect(summarizeLocal(source, { endpoint })).resolves.toMatchObject({
+      claims: [{ text: "Масса детали — 42 кг." }],
+    });
   });
   it("preserves every character when a long fragment is split", () => {
     const text = "Условия: 42 кг.\n".repeat(1000);
@@ -113,7 +123,9 @@ describe("local summarization", () => {
   it("rejects citations belonging to another batch", async () => {
     const input = { ...source, fragments: source.fragments.map((f) => ({ ...f, text: f.text.repeat(16) })) };
     const endpoint = await serve(() => answer("p2-f1", source.fragments[1]?.text));
-    await expect(summarizeLocal(input, { endpoint, batchCharacters: 1000 })).rejects.toThrow("не прошли проверку");
+    await expect(summarizeLocal(input, { endpoint, batchCharacters: 1000 })).rejects.toThrow(
+      "цитата модели не найдена",
+    );
   });
   it("allows only loopback endpoints and prevents embedded credentials", () => {
     for (const url of ["https://example.org/v1", "http://user:secret@localhost/v1", "http://localhost/v1?key=secret"]) {
