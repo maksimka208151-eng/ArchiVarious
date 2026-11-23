@@ -4,14 +4,20 @@ import { parseArgs } from "node:util";
 import type { SourceDocument } from "@archivarious/core";
 import type { DoclingOptions } from "./docling";
 import type { ExtractorMode } from "./hybrid";
-import { runPipeline } from "./pipeline";
+import { LOCAL_MODEL, localEndpoint, summarizeLocal } from "./local-summarize";
+import { runPipeline, type Summarizer } from "./pipeline";
 
 const help = `ArchiVarious — PDF → извлечённый текст → конспект с доказательствами
 
 pnpm etl --input ./lecture.pdf --output ./knowledge
 pnpm etl --input ./lecture.pdf --output ./knowledge --model provider/model
 
-Без --model всё выполняется локально, нейросеть не вызывается.
+Без --model и --provider local нейросеть не вызывается.
+--provider local: локальный OpenAI-совместимый сервер, модель по умолчанию qwen3.5-9b.
+--endpoint http://127.0.0.1:8080/v1: адрес локального сервера (только loopback).
+--batch-chars 6000: размер части текста; это символы, а не токены контекста.
+--llm-timeout 600: таймаут каждой части в секундах.
+Пример: pnpm etl --input ./lecture.pdf --output ./knowledge --provider local
 --model отправляет извлечённый текст выбранной модели через AI Gateway.
 Нужен AI_GATEWAY_API_KEY в окружении. Название доступной модели задайте явно.
 Оригинал, текст и результаты сохраняются в новой папке внутри --output.
@@ -30,6 +36,10 @@ async function main(): Promise<void> {
       input: { type: "string" },
       output: { type: "string" },
       model: { type: "string" },
+      provider: { type: "string", default: "gateway" },
+      endpoint: { type: "string" },
+      "batch-chars": { type: "string", default: "6000" },
+      "llm-timeout": { type: "string", default: "600" },
       help: { type: "boolean" },
       extractor: { type: "string", default: "auto" },
       "allow-partial": { type: "boolean", default: false },
@@ -46,18 +56,47 @@ async function main(): Promise<void> {
   if (!["auto", "pdfjs", "docling"].includes(values.extractor)) {
     throw new Error("--extractor: auto, pdfjs или docling.");
   }
-  if (values.model && (!values.model.includes("/") || !process.env.AI_GATEWAY_API_KEY)) {
+  if (!["gateway", "local"].includes(values.provider)) throw new Error("--provider: gateway или local.");
+  const local = values.provider === "local";
+  if (!local && values.endpoint) throw new Error("--endpoint используется с --provider local.");
+  if (!local && values.model && (!values.model.includes("/") || !process.env.AI_GATEWAY_API_KEY)) {
     throw new Error("Для генерации нужны --model provider/model и AI_GATEWAY_API_KEY в окружении.");
   }
-  const model = values.model;
-  const summarizer = model
-    ? async (source: SourceDocument) => {
-        const { summarizeSource } = await import("./summarize");
-        return summarizeSource(source, model);
-      }
-    : undefined;
+  const batchCharacters = Number(values["batch-chars"]);
+  const timeoutSeconds = Number(values["llm-timeout"]);
+  if (!Number.isInteger(batchCharacters) || batchCharacters < 1000 || batchCharacters > 12000) {
+    throw new Error("--batch-chars: целое число от 1000 до 12000.");
+  }
+  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 3600) {
+    throw new Error("--llm-timeout: целое число от 1 до 3600.");
+  }
+  if (local) localEndpoint(values.endpoint);
+  const model = values.model ?? (local ? LOCAL_MODEL : undefined);
+  const summarizer: Summarizer | undefined = local
+    ? (source, context) =>
+        summarizeLocal(source, {
+          model,
+          endpoint: values.endpoint,
+          batchCharacters,
+          timeoutSeconds,
+          onBatch: context.save,
+        })
+    : model
+      ? async (source) => {
+          const { summarizeSource } = await import("./summarize");
+          return summarizeSource(source, model);
+        }
+      : undefined;
   const cwd = process.env.INIT_CWD ?? process.cwd();
   const directory = await runPipeline(resolve(cwd, values.input), resolve(cwd, values.output), summarizer, model, {
+    generation: model
+      ? {
+          provider: values.provider,
+          ...(local
+            ? { endpoint: values.endpoint ?? "http://127.0.0.1:8080/v1", batchCharacters, timeoutSeconds }
+            : {}),
+        }
+      : undefined,
     extractor: values.extractor as ExtractorMode,
     allowPartial: values["allow-partial"],
     ocrEngine: values["ocr-engine"] as DoclingOptions["ocrEngine"],

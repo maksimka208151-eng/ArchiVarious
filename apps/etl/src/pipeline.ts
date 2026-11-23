@@ -11,15 +11,21 @@ import { DoclingError } from "./docling";
 import { LIMITS } from "./extract";
 import { renderExtraction } from "./extraction-report";
 import { type ExtractionOptions, extractDocument } from "./hybrid";
+import { LocalModelError } from "./local-summarize";
 
-export type Summarizer = (source: SourceDocument) => Promise<GroundedSummary>;
+export type Summarizer = (
+  source: SourceDocument,
+  context: { save: (name: string, value: unknown) => Promise<void> },
+) => Promise<GroundedSummary>;
 
 export async function runPipeline(
   input: string,
   outputRoot: string,
   summarize?: Summarizer,
   model?: string,
-  options: ExtractionOptions = {},
+  options: ExtractionOptions & {
+    generation?: { provider: string; endpoint?: string; batchCharacters?: number; timeoutSeconds?: number };
+  } = {},
 ): Promise<string> {
   const file = await open(resolve(input), "r");
   let bytes: Uint8Array;
@@ -57,6 +63,7 @@ export async function runPipeline(
     sourceId: source.id,
     startedAt,
     model: model ?? null,
+    generation: options.generation ?? null,
     extractor: source.extraction,
     ocrEngine: options.ocrEngine ?? "easyocr",
     ocrTimeoutSeconds: options.timeoutSeconds ?? 300,
@@ -79,9 +86,10 @@ export async function runPipeline(
   const blocked = source.extraction?.status === "partial" && !options.allowPartial;
   try {
     if (blocked) throw new Error("PDF прочитан частично; требуется проверка или --allow-partial.");
-    const summary = await summarize(source);
+    const summary = await summarize(source, { save });
     validateEvidence(summary, source);
     await save("summary.json", summary);
+    if (summary.coverage) await save("coverage.json", summary.coverage);
     await writeFile(join(directory, "summary.md"), renderGroundedMarkdown(summary, source), { flag: "wx" });
     await save("completed.json", {
       completedAt: new Date().toISOString(),
@@ -96,7 +104,9 @@ export async function runPipeline(
     });
     const message = blocked
       ? "PDF прочитан частично. Проверьте source.json; --allow-partial разрешает конспект с пропусками."
-      : "Не удалось создать проверяемый конспект.";
+      : error instanceof LocalModelError
+        ? error.message
+        : "Не удалось создать проверяемый конспект.";
     throw new Error(`${message} Данные сохранены: ${directory}`, { cause: error });
   }
   return directory;
