@@ -40,6 +40,7 @@ const context = await esbuild.context({
     "@lezer/common",
     "@lezer/highlight",
     "@lezer/lr",
+    "node:*",
     ...builtins,
   ],
   conditions: ["svelte", "browser"],

@@ -5,6 +5,37 @@ import { chunks } from "./chunks";
 
 export const LIMITS = { bytes: 30 * 1024 * 1024, pages: 150, characters: 120_000, fragment: 6_000 };
 
+export function extractText(
+  bytes: Uint8Array,
+  name: string,
+  mediaType: "text/plain" | "text/markdown",
+): SourceDocument {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("Не удалось прочитать текст. Сохраните документ в кодировке UTF-8.");
+  }
+  if (text.includes("\0")) throw new Error("Файл содержит двоичные данные. Ожидается текст UTF-8.");
+  if (text.length > LIMITS.characters) throw new Error("Больше 120 000 символов. Разделите документ.");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return {
+    schemaVersion: 1,
+    id: sha256,
+    name,
+    mediaType,
+    sha256,
+    pageCount: 1,
+    fragments: chunks(text, LIMITS.fragment).map((part, index) => ({
+      id: `f${index + 1}`,
+      page: 1,
+      text: part,
+      method: "native",
+    })),
+    warnings: mediaType === "text/markdown" ? ["Вложения и связанные файлы Markdown не анализируются."] : [],
+  };
+}
+
 /** PDF.js text extraction plus conservative signals for the hybrid router. */
 export async function extractPdf(bytes: Uint8Array, name: string, allowEmpty = false): Promise<SourceDocument> {
   if (bytes.byteLength > LIMITS.bytes) throw new Error("PDF превышает лимит 30 МБ.");

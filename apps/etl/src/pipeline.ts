@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import {
   type GroundedSummary,
+  originalDocumentName,
   renderGroundedMarkdown,
   type SourceDocument,
   validateEvidence,
 } from "@archivarious/core";
 import { DoclingError } from "./docling";
-import { LIMITS } from "./extract";
+import { extractText, LIMITS } from "./extract";
 import { renderExtraction } from "./extraction-report";
 import { type ExtractionOptions, extractDocument } from "./hybrid";
 import { LocalModelError } from "./local-summarize";
@@ -25,13 +26,14 @@ export async function runPipeline(
   model?: string,
   options: ExtractionOptions & {
     generation?: { provider: string; endpoint?: string; batchCharacters?: number; timeoutSeconds?: number };
+    onDirectory?: (path: string) => void;
   } = {},
 ): Promise<string> {
   const file = await open(resolve(input), "r");
   let bytes: Uint8Array;
   try {
     const info = await file.stat();
-    if (!info.isFile() || info.size > LIMITS.bytes) throw new Error("Нужен PDF-файл размером до 30 МБ.");
+    if (!info.isFile() || info.size > LIMITS.bytes) throw new Error("Нужен файл размером до 30 МБ.");
     bytes = await file.readFile();
   } finally {
     await file.close();
@@ -39,14 +41,23 @@ export async function runPipeline(
   // New directory per attempt: a failed or repeated run cannot overwrite earlier results.
   const directory = join(resolve(outputRoot), randomUUID());
   await mkdir(directory, { recursive: true });
+  options.onDirectory?.(directory);
   const save = (name: string, value: unknown) =>
     writeFile(join(directory, name), `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
-  await writeFile(join(directory, "original.pdf"), bytes, { flag: "wx" });
+  const extension = extname(input).toLowerCase();
+  const mediaType = extension === ".txt" ? "text/plain" : extension === ".md" ? "text/markdown" : "application/pdf";
+  await writeFile(join(directory, originalDocumentName(mediaType)), bytes, { flag: "wx" });
   let source: SourceDocument;
   try {
-    source = await extractDocument(bytes, basename(input), options);
+    source =
+      mediaType === "application/pdf"
+        ? await extractDocument(bytes, basename(input), options)
+        : extractText(bytes, basename(input), mediaType);
   } catch (error) {
-    const message = error instanceof DoclingError ? error.message : "Не удалось извлечь PDF; оригинал сохранён.";
+    const message =
+      error instanceof DoclingError || (mediaType !== "application/pdf" && error instanceof Error)
+        ? error.message
+        : "Не удалось извлечь PDF; оригинал сохранён.";
     await save("failed.json", {
       status: "failed",
       stage: "extraction",
@@ -78,7 +89,9 @@ export async function runPipeline(
   });
   if (!hasText) {
     const message =
-      "Текст не извлечён: требуется работающий OCR. См. extracted.md и docs/ETL.md; повторите с --extractor docling.";
+      mediaType === "application/pdf"
+        ? "Текст не извлечён: требуется работающий OCR. См. extracted.md и docs/ETL.md; повторите с --extractor docling."
+        : "В документе недостаточно текста для конспекта. См. extracted.md.";
     await save("failed.json", { status: "failed", stage: "extraction", message });
     throw new Error(`${message} Данные сохранены: ${directory}`);
   }

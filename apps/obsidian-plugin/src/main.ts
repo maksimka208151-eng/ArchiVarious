@@ -17,8 +17,10 @@ import {
   URI_ACTION,
 } from "@archivarious/core";
 import { obsidianLogoIcon } from "@archivarious/ui";
-import { addIcon, Notice, Plugin, requestUrl, TFile } from "obsidian";
+import { addIcon, Notice, Platform, Plugin, requestUrl, TFile } from "obsidian";
 import { CaptureModal } from "./CaptureModal";
+import { DocumentImportModal } from "./DocumentImportModal";
+import { isDocumentName, processDocument } from "./documents";
 import { placeNote, surveyBody } from "./filing";
 import { Inbox, type InboxEntry } from "./inbox";
 import { dueReviews, listReviews, noteTags, type ReviewEntry } from "./notes";
@@ -50,6 +52,7 @@ export default class ArchiVariousPlugin extends Plugin {
   override settings: ArchiVariousSettings = DEFAULT_SETTINGS;
   private inbox!: Inbox;
   private surveyOpen = false;
+  private documentsRunning = false;
   private mode: QueueMode = "due";
   /** Items answered or dismissed since the queue was last empty, so a pass never asks twice (also covers metadata cache lag). */
   private skipped = new Set<string>();
@@ -61,6 +64,14 @@ export default class ArchiVariousPlugin extends Plugin {
     addIcon(ICON, obsidianLogoIcon());
     this.addRibbonIcon(ICON, "ArchiVarious: quick capture", () => this.openCapture());
     this.addCommand({ id: "quick-capture", name: "Quick capture", callback: () => this.openCapture() });
+    if (Platform.isDesktopApp) {
+      this.addRibbonIcon("file-up", "ArchiVarious: импорт документов", () => this.openDocumentImport());
+      this.addCommand({
+        id: "import-documents",
+        name: "Импортировать документы (PDF, TXT, Markdown)",
+        callback: () => this.openDocumentImport(),
+      });
+    }
     this.addCommand({ id: "run-due-surveys", name: "Sort due captures now", callback: () => this.runQueue(true) });
     this.addCommand({
       id: "sort-all-now",
@@ -89,7 +100,16 @@ export default class ArchiVariousPlugin extends Plugin {
     });
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (!(file instanceof TFile) || file.extension !== "md") return;
+        if (!(file instanceof TFile)) return;
+        if (Platform.isDesktopApp && isDocumentName(file.name)) {
+          menu.addItem((item) =>
+            item
+              .setTitle("ArchiVarious: законспектировать")
+              .setIcon("file-up")
+              .onClick(() => this.openDocumentImport(file)),
+          );
+        }
+        if (file.extension !== "md") return;
         menu.addItem((item) =>
           item
             .setTitle("ArchiVarious: разложить")
@@ -110,6 +130,25 @@ export default class ArchiVariousPlugin extends Plugin {
       void this.runQueue();
       this.registerInterval(window.setInterval(() => void this.runQueue(), SURVEY_CHECK_INTERVAL_MS));
     });
+  }
+
+  private openDocumentImport(file?: TFile): void {
+    if (this.documentsRunning) {
+      new Notice("ArchiVarious уже обрабатывает документы. Дождитесь завершения.");
+      return;
+    }
+    new DocumentImportModal(
+      this.app,
+      file,
+      () => {
+        if (this.documentsRunning) return undefined;
+        this.documentsRunning = true;
+        return () => {
+          this.documentsRunning = false;
+        };
+      },
+      (source, allowPartial) => processDocument(this.app, this.settings, source, allowPartial),
+    ).open();
   }
 
   async loadSettings(): Promise<void> {

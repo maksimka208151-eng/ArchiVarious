@@ -3,7 +3,7 @@ export interface SourceDocument {
   schemaVersion: 1;
   id: string;
   name: string;
-  mediaType: "application/pdf";
+  mediaType: "application/pdf" | "text/plain" | "text/markdown";
   sha256: string;
   pageCount: number;
   fragments: SourceFragment[];
@@ -16,6 +16,12 @@ export interface SourceDocument {
     status: "complete" | "partial";
     pages: { page: number; status: "read" | "needs-review"; reasons: string[] }[];
   };
+}
+
+export function originalDocumentName(mediaType: SourceDocument["mediaType"]): string {
+  if (mediaType === "text/plain") return "original.txt";
+  if (mediaType === "text/markdown") return "original.md";
+  return "original.pdf";
 }
 
 export interface SourceFragment {
@@ -94,8 +100,12 @@ export function renderGroundedMarkdown(summary: GroundedSummary, source: SourceD
     lines.push(`- ${escapeMarkdown(claim.text.replace(/\s+/g, " "))}`);
     for (const evidence of claim.evidence) {
       const page = fragments.get(evidence.fragmentId)?.page;
+      const original =
+        source.mediaType === "application/pdf"
+          ? `[Страница ${page}](./original.pdf#page=${page})`
+          : `[Оригинал](./${originalDocumentName(source.mediaType)})`;
       lines.push(
-        `  - [Страница ${page}](./original.pdf#page=${page}) · [Извлечённый текст](./extracted.md#${evidence.fragmentId})`,
+        `  - ${original} · [Извлечённый текст](./extracted.md#${evidence.fragmentId})`,
         `    > ${escapeMarkdown(evidence.quote.replace(/\s+/g, " "))}`,
       );
     }

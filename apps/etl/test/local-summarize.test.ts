@@ -41,15 +41,14 @@ async function serve(reply: (body: Record<string, unknown>) => unknown) {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
 }
-function answer(fragmentId = "p1-f1", quote = source.fragments[0]?.text ?? "", reason = "stop") {
+function answer(evidenceIds: string[] = ["s1"], reason = "stop") {
   return {
     choices: [
       {
         finish_reason: reason,
         message: {
           content: JSON.stringify({
-            title: "Деталь",
-            claims: [{ text: "Масса детали — 42 кг.", evidence: [{ fragmentId, quote }] }],
+            claims: [{ text: "Масса детали — 42 кг.", evidenceIds }],
           }),
         },
       },
@@ -75,7 +74,14 @@ describe("local summarization", () => {
     const endpoint = await serve((body) => {
       expect(body.model).toBe("qwen3.5-9b");
       expect(body.stream).toBe(false);
-      expect(body.response_format).toMatchObject({ type: "json_schema" });
+      expect(body.response_format).toMatchObject({
+        type: "json_schema",
+        json_schema: {
+          schema: {
+            properties: { claims: { items: { properties: { evidenceIds: { items: { enum: ["s1", "s2"] } } } } } },
+          },
+        },
+      });
       expect(JSON.stringify(body.messages)).toContain("42 кг");
       return answer();
     });
@@ -86,20 +92,21 @@ describe("local summarization", () => {
         artifacts.push(name);
       },
     });
+    expect(summary.claims[0]?.evidence).toEqual([{ fragmentId: "p1-f1", quote: source.fragments[0]?.text }]);
     expect(summary.coverage?.uncitedFragmentIds).toEqual(["p2-f1"]);
     expect(artifacts).toEqual(["batch-001.json"]);
   });
   it.each([
-    ["fabricated quote", answer("p1-f1", "Несуществующая дословная цитата"), "цитата модели не найдена"],
-    ["fabricated ID", answer("p100-f1"), "цитата модели не найдена"],
-    ["truncated output", answer("p1-f1", source.fragments[0]?.text, "length"), "причиной length"],
+    ["missing evidence", answer([]), "не соответствует схеме"],
+    ["fabricated ID", answer(["s100"]), "неизвестный идентификатор цитаты"],
+    ["truncated output", answer(["s1"], "length"), "причиной length"],
     ["empty response", { choices: [] }, "не соответствует схеме"],
   ])("rejects %s", async (_, payload, reason) => {
     const endpoint = await serve(() => payload);
     await expect(summarizeLocal(source, { endpoint })).rejects.toThrow(reason);
   });
   it("saves the rejected response and exact batch without exporting an accepted summary", async () => {
-    const payload = answer("p1-f1", "Несуществующая дословная цитата");
+    const payload = answer(["s100"]);
     const endpoint = await serve(() => payload);
     const saved: { name: string; value: unknown }[] = [];
     await expect(
@@ -109,14 +116,17 @@ describe("local summarization", () => {
           saved.push({ name, value });
         },
       }),
-    ).rejects.toThrow("цитата модели не найдена");
+    ).rejects.toThrow("неизвестный идентификатор цитаты");
     expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({
       name: "rejected-batch-001.json",
       value: {
         status: "rejected",
         response: payload,
-        fragments: [{ fragmentId: "p1-f1", text: source.fragments[0]?.text }, { fragmentId: "p2-f1" }],
+        fragments: [
+          { evidenceId: "s1", fragmentId: "p1-f1", text: source.fragments[0]?.text },
+          { evidenceId: "s2", fragmentId: "p2-f1" },
+        ],
       },
     });
   });
@@ -149,18 +159,26 @@ describe("local summarization", () => {
       const messages = body.messages as { content: string }[];
       const part = JSON.parse(messages[1]?.content ?? "");
       const f = part.fragments[0];
-      return answer(f.fragmentId, f.text.slice(0, 30));
+      return answer([f.evidenceId]);
     });
     const summary = await summarizeLocal(input, { endpoint, batchCharacters: 1000 });
     expect(calls).toBeGreaterThan(1);
     expect(summary.claims).toHaveLength(calls);
     expect(summary.coverage?.uncitedFragmentIds).toEqual([]);
   });
-  it("rejects citations belonging to another batch", async () => {
+  it("reconstructs citations verbatim from a selected span including OCR whitespace", async () => {
+    const quote = "  Усл0вие  42 кг.\nДопуск 3 мм.  ";
+    const prefix = `\n${"А".repeat(358)}\n`;
+    const input = { ...source, fragments: [{ id: "ocr", page: 2, text: prefix + quote }] };
+    const endpoint = await serve(() => answer(["s2"]));
+    const summary = await summarizeLocal(input, { endpoint });
+    expect(summary.claims[0]?.evidence).toEqual([{ fragmentId: "ocr", quote }]);
+  });
+  it("rejects evidence IDs belonging to another batch", async () => {
     const input = { ...source, fragments: source.fragments.map((f) => ({ ...f, text: f.text.repeat(16) })) };
-    const endpoint = await serve(() => answer("p2-f1", source.fragments[1]?.text));
+    const endpoint = await serve(() => answer(["s1"]));
     await expect(summarizeLocal(input, { endpoint, batchCharacters: 1000 })).rejects.toThrow(
-      "цитата модели не найдена",
+      "Часть 2/4: модель указала неизвестный идентификатор цитаты",
     );
   });
   it("allows only loopback endpoints and prevents embedded credentials", () => {

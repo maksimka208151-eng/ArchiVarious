@@ -6,7 +6,7 @@ import {
   isAppsScriptUrl,
   type PlacementFeedback,
 } from "@archivarious/core";
-import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { type App, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
 import type ArchiVariousPlugin from "./main";
 
 export interface ArchiVariousSettings {
@@ -24,6 +24,11 @@ export interface ArchiVariousSettings {
   /** Google Calendar Apps Script web app (see core `calendar.ts`); the widget app reads these too. */
   calendarUrl: string;
   calendarKey: string;
+  documentRepository: string;
+  documentNode: string;
+  documentPython: string;
+  documentEndpoint: string;
+  documentModel: string;
 }
 
 export const DEFAULT_SETTINGS: ArchiVariousSettings = {
@@ -36,6 +41,11 @@ export const DEFAULT_SETTINGS: ArchiVariousSettings = {
   feedback: {},
   calendarUrl: "",
   calendarKey: "",
+  documentRepository: "",
+  documentNode: "",
+  documentPython: "",
+  documentEndpoint: "http://127.0.0.1:8080/v1",
+  documentModel: "bonsai-2.5-27b",
 };
 
 export class ArchiVariousSettingTab extends PluginSettingTab {
@@ -49,6 +59,8 @@ export class ArchiVariousSettingTab extends PluginSettingTab {
   override display(): void {
     const { containerEl } = this;
     containerEl.empty();
+
+    if (Platform.isDesktopApp) this.showDocumentSettings(containerEl);
 
     new Setting(containerEl)
       .setName("Inbox folder")
@@ -142,5 +154,55 @@ export class ArchiVariousSettingTab extends PluginSettingTab {
           }
         }),
       );
+  }
+
+  private showDocumentSettings(container: HTMLElement): void {
+    new Setting(container).setName("Обработка документов").setHeading();
+    const fields = [
+      {
+        key: "documentRepository",
+        name: "Папка проекта ArchiVarious",
+        desc: "Абсолютный путь к локальной копии репозитория с установленными зависимостями.",
+        placeholder: "C:\\Users\\…\\Documents\\ArchiVarious",
+      },
+      {
+        key: "documentNode",
+        name: "Исполняемый файл Node.js",
+        desc: "Можно оставить пустым, если команда node доступна при запуске Obsidian.",
+        placeholder: "C:\\Program Files\\nodejs\\node.exe",
+      },
+      {
+        key: "documentPython",
+        name: "Исполняемый файл Python для OCR",
+        desc: "Путь к Python с установленным Docling. При пустом поле используется настройка среды обработчика.",
+        placeholder: "C:\\…\\.venv\\Scripts\\python.exe",
+      },
+      {
+        key: "documentEndpoint",
+        name: "Адрес локальной модели",
+        desc: "Базовый адрес OpenAI-совместимого сервера на этом компьютере.",
+        placeholder: DEFAULT_SETTINGS.documentEndpoint,
+      },
+      {
+        key: "documentModel",
+        name: "Имя модели",
+        desc: "Имя, под которым модель запущена на сервере.",
+        placeholder: DEFAULT_SETTINGS.documentModel,
+      },
+    ] as const;
+    for (const { key, name, desc, placeholder } of fields) {
+      new Setting(container)
+        .setName(name)
+        .setDesc(desc)
+        .addText((text) =>
+          text
+            .setPlaceholder(placeholder)
+            .setValue(this.plugin.settings[key])
+            .onChange(async (value) => {
+              this.plugin.settings[key] = value.trim() || DEFAULT_SETTINGS[key];
+              await this.plugin.saveSettings();
+            }),
+        );
+    }
   }
 }

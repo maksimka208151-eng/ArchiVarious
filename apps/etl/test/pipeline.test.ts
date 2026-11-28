@@ -44,6 +44,21 @@ async function setup() {
 }
 
 describe("PDF pipeline", () => {
+  it.each([
+    ["txt", "text/plain"],
+    ["md", "text/markdown"],
+  ])("imports UTF-8 %s and links to the preserved original", async (extension, mediaType) => {
+    const { root, output } = await setup();
+    const input = join(root, `заметки.${extension}`);
+    const quote = "Температура процесса составляет 200 °C.";
+    await writeFile(input, quote);
+    const directory = await runPipeline(input, output, async (source) => {
+      expect(source.mediaType).toBe(mediaType);
+      return { title: "Процесс", claims: [{ text: quote, evidence: [{ fragmentId: "f1", quote }] }] };
+    });
+    expect(await readFile(join(directory, `original.${extension}`), "utf8")).toBe(quote);
+    expect(await readFile(join(directory, "summary.md"), "utf8")).toContain(`[Оригинал](./original.${extension})`);
+  });
   it("extracts a real PDF with page references and deterministic content hash", async () => {
     const source = await extractPdf(pdfFixture(), "input.pdf");
     expect(source.fragments[0]).toMatchObject({
