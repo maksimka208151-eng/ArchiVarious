@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { SourceDocument } from "@archivarious/core";
@@ -7,7 +7,7 @@ import type { ExtractorMode } from "./hybrid";
 import { LOCAL_MODEL, localEndpoint, summarizeLocal } from "./local-summarize";
 import { runPipeline, type Summarizer } from "./pipeline";
 
-const help = `ArchiVarious — PDF → извлечённый текст → конспект с доказательствами
+const help = `ArchiVarious — PDF, TXT и Markdown → извлечённый текст → конспект с доказательствами
 
 pnpm etl --input ./lecture.pdf --output ./knowledge
 pnpm etl --input ./lecture.pdf --output ./knowledge --model provider/model
@@ -26,9 +26,13 @@ pnpm etl --input ./lecture.pdf --output ./knowledge --model provider/model
 --ocr-engine easyocr|tesseract: движок внутри Docling (по умолчанию easyocr).
 --ocr-timeout 900: лимит времени OCR в секундах, по умолчанию 300.
 --ocr-scale 2: масштаб рендера для OCR (1–4), по умолчанию 3.
+--json-result: последняя строка stdout содержит статус, папку и имя заметки для плагина.
 Docling: отдельный Python; путь задаётся ARCHIVARIOUS_PYTHON.
 Лимиты: 30 МБ, 150 страниц, 120 000 символов.
 `;
+
+let resultDirectory: string | undefined;
+const jsonResult = process.argv.slice(2).includes("--json-result");
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -41,6 +45,7 @@ async function main(): Promise<void> {
       "batch-chars": { type: "string", default: "6000" },
       "llm-timeout": { type: "string", default: "600" },
       help: { type: "boolean" },
+      "json-result": { type: "boolean" },
       extractor: { type: "string", default: "auto" },
       "allow-partial": { type: "boolean", default: false },
       "ocr-engine": { type: "string", default: "easyocr" },
@@ -89,6 +94,9 @@ async function main(): Promise<void> {
       : undefined;
   const cwd = process.env.INIT_CWD ?? process.cwd();
   const directory = await runPipeline(resolve(cwd, values.input), resolve(cwd, values.output), summarizer, model, {
+    onDirectory: (path) => {
+      resultDirectory = path;
+    },
     generation: model
       ? {
           provider: values.provider,
@@ -103,15 +111,42 @@ async function main(): Promise<void> {
     timeoutSeconds: Number(values["ocr-timeout"]),
     ocrScale: Number(values["ocr-scale"]),
   });
-  console.log(`Результат сохранён: ${directory}. Проверьте статус в run.json и предупреждения в source.json.`);
   const source = JSON.parse(await readFile(resolve(directory, "source.json"), "utf8")) as SourceDocument;
+  if (values["json-result"]) {
+    console.log(
+      JSON.stringify({
+        directory,
+        note: summarizer ? "summary.md" : "extracted.md",
+        status: source.extraction?.status === "partial" ? "partial" : "complete",
+      }),
+    );
+    return;
+  }
+  console.log(`Результат сохранён: ${directory}. Проверьте статус в run.json и предупреждения в source.json.`);
   console.log(`Извлечено символов: ${source.fragments.reduce((total, fragment) => total + fragment.text.length, 0)}.`);
   if (source.extraction?.status === "partial") {
     console.warn("Внимание: PDF прочитан частично. Откройте extracted.md: там указаны пропуски и причины.");
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "Не удалось обработать документ.");
+main().catch(async (error: unknown) => {
   process.exitCode = 1;
+  const message = error instanceof Error ? error.message : "Не удалось обработать документ.";
+  if (!jsonResult) {
+    console.error(message);
+    return;
+  }
+  const extractionExists = resultDirectory
+    ? await stat(resolve(resultDirectory, "extracted.md"))
+        .then((file) => file.isFile())
+        .catch(() => false)
+    : false;
+  console.log(
+    JSON.stringify({
+      directory: resultDirectory,
+      note: extractionExists ? "extracted.md" : null,
+      status: "failed",
+      message,
+    }),
+  );
 });

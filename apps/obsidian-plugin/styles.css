@@ -34,3 +34,38 @@ body.theme-dark {
 .setting-item input.archivarious-invalid {
   border-color: var(--text-error);
 }
+.archivarious-document-drop {
+  padding: 16px;
+  border: 1px dashed var(--background-modifier-border-hover);
+  border-radius: var(--radius-m);
+}
+
+.archivarious-document-drop p {
+  margin: 0 0 8px;
+}
+
+.archivarious-document-drop.is-dragging {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+.archivarious-document-results {
+  max-height: 35vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.archivarious-document-result {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.archivarious-document-result p {
+  margin: 4px 0;
+}
+
+.archivarious-document-result small {
+  display: block;
+  margin: 4px 0 8px;
+  color: var(--text-muted);
+}

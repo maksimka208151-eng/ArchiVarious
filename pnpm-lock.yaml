@@ -52,6 +52,9 @@ importers:
       '@tsconfig/svelte':
         specifier: 5.0.8
         version: 5.0.8
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
       builtin-modules:
         specifier: 5.4.0
         version: 5.4.0
